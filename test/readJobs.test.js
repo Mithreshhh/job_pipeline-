@@ -1,0 +1,124 @@
+/**
+ * Tests for the board's query, which is the part of the read path the two
+ * LMSes copy. Everything here is pure query building - no database - so
+ * `npm test` stays dependency-free.
+ *
+ * The filter values these functions receive come straight off a URL query
+ * string, so several of these are about what happens when that string is
+ * hostile rather than merely wrong.
+ */
+
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert");
+
+const {
+  buildJobQuery,
+  buildJobSort,
+  buildPagination,
+  MAX_LIMIT,
+  DEFAULT_LIMIT,
+} = require("../db/readJobs.js");
+
+test("a bare query still scopes to live listings", () => {
+  // Nobody should have to remember to add isActive; forgetting it would
+  // put retired links in front of a student.
+  assert.deepEqual(buildJobQuery(), { isActive: true });
+  assert.deepEqual(buildJobQuery({}), { isActive: true });
+});
+
+test("includeInactive is the only way to see retired listings", () => {
+  const query = buildJobQuery({ includeInactive: true });
+  assert.ok(!("isActive" in query));
+});
+
+test("facets accept repeated params, comma lists and single values", () => {
+  assert.deepEqual(buildJobQuery({ category: "AI-Tech" }).roleCategory, {
+    $in: ["AI-Tech"],
+  });
+  assert.deepEqual(buildJobQuery({ category: "AI-Tech,Tech" }).roleCategory, {
+    $in: ["AI-Tech", "Tech"],
+  });
+  assert.deepEqual(
+    buildJobQuery({ category: ["AI-Tech", "Creative"] }).roleCategory,
+    { $in: ["AI-Tech", "Creative"] },
+  );
+});
+
+test("unknown facet values are dropped, not passed through", () => {
+  // A typo should narrow nothing rather than silently return zero rows.
+  const query = buildJobQuery({ category: "AI-Tech,Nonsense", workType: "seasonal" });
+  assert.deepEqual(query.roleCategory, { $in: ["AI-Tech"] });
+  assert.ok(!("workType" in query));
+});
+
+test("duplicate values collapse", () => {
+  const query = buildJobQuery({ category: "Tech,Tech,Tech" });
+  assert.deepEqual(query.roleCategory, { $in: ["Tech"] });
+});
+
+test("a query string cannot smuggle a Mongo operator in", () => {
+  // ?category[$ne]=x arrives as an object. Whitelisting against the
+  // taxonomy is what stops it reaching the driver.
+  const query = buildJobQuery({
+    category: { $ne: "AI-Tech" },
+    workType: { $gt: "" },
+    country: { $ne: null },
+    remote: { $ne: false },
+  });
+
+  assert.deepEqual(query, { isActive: true });
+});
+
+test("remote distinguishes 'not asked' from 'asked for false'", () => {
+  assert.equal(buildJobQuery({ remote: "true" }).isRemote, true);
+  assert.equal(buildJobQuery({ remote: "false" }).isRemote, false);
+  assert.equal(buildJobQuery({ remote: true }).isRemote, true);
+  assert.ok(!("isRemote" in buildJobQuery({ remote: "maybe" })));
+  assert.ok(!("isRemote" in buildJobQuery({})));
+});
+
+test("country is length-capped rather than whitelisted", () => {
+  // It has no fixed list - it's whatever detectCountry read off a location.
+  assert.equal(buildJobQuery({ country: "India" }).country, "India");
+  assert.equal(buildJobQuery({ country: "   " }).country, undefined);
+  assert.equal(buildJobQuery({ country: "x".repeat(200) }).country.length, 60);
+});
+
+test("search becomes a text query and takes over the sort", () => {
+  assert.deepEqual(buildJobQuery({ search: "prompt engineer" }).$text, {
+    $search: "prompt engineer",
+  });
+
+  // Relevance first: searching "prompt engineer" should surface prompt
+  // engineering roles, not whatever was posted most recently.
+  assert.deepEqual(buildJobSort({ search: "prompt engineer" }), {
+    score: { $meta: "textScore" },
+    postedAt: -1,
+  });
+  assert.deepEqual(buildJobSort({}), { postedAt: -1 });
+  assert.deepEqual(buildJobSort({ search: "   " }), { postedAt: -1 });
+});
+
+test("pagination clamps so nobody can ask for all 9,800 rows", () => {
+  assert.deepEqual(buildPagination({ page: "3", limit: "10" }), {
+    page: 3,
+    limit: 10,
+    skip: 20,
+  });
+  assert.equal(buildPagination({ limit: "5000" }).limit, MAX_LIMIT);
+  assert.equal(buildPagination({}).limit, DEFAULT_LIMIT);
+});
+
+test("nonsense pagination falls back instead of producing NaN", () => {
+  // skip: NaN throws at the driver; page 0 would give a negative skip.
+  for (const params of [{ page: "0" }, { page: "-4" }, { page: "abc" }, { page: null }]) {
+    const { page, skip } = buildPagination(params);
+    assert.equal(page, 1, JSON.stringify(params));
+    assert.equal(skip, 0);
+  }
+
+  assert.equal(buildPagination({ limit: "0" }).limit, DEFAULT_LIMIT);
+  assert.equal(buildPagination({ limit: "-10" }).limit, DEFAULT_LIMIT);
+});

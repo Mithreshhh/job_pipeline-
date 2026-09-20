@@ -1,0 +1,44 @@
+name: Daily job pipeline
+
+on:
+  schedule:
+    # 06:00 IST = 00:30 UTC (IST is UTC+5:30). GitHub cron is always UTC.
+    - cron: "30 0 * * *"
+  # Lets you run it by hand from the Actions tab without waiting for 6 AM.
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # The full run makes ~150 network calls across seven sources.
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # Fails the run before it touches the database if the classification
+      # logic has regressed.
+      - name: Run tests
+        run: npm test
+
+      - name: Run the daily pipeline
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: node scripts/runDaily.js

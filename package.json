@@ -1,0 +1,15 @@
+{
+  "name": "skeo-job-pipeline",
+  "version": "1.0.0",
+  "description": "Scrapes job listings from multiple sources, normalizes them into a shared schema, and stores them for the Skeo job board.",
+  "main": "pipeline/index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "fast-xml-parser": "^5.11.1",
+    "mongoose": "^9.10.1"
+  }
+}
