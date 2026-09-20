@@ -493,3 +493,50 @@ A new section gets added every time a task is finished.
   because there's no in-memory MongoDB in the dependencies and adding one
   would cost a 100MB download in CI. It should be run once against the real
   Atlas cluster before the LMSes point at it.
+
+## Fixing the rule that hid 41% of the board
+
+- **What went wrong**: rule 2 retired anything whose `postedAt` was older
+  than 45 days. On the first live run that hid 3,261 of 7,929 postings —
+  most of them jobs sitting right there on Greenhouse that morning.
+- **The mistake was mixing up two claims.** "Posted a while ago" and "gone"
+  are different things, and only the second justifies hiding a job. I had
+  reasoned about the window-limited sources, where absence genuinely tells
+  you nothing, and then applied the same age test to the complete feeds,
+  where we have positive daily evidence the job is still listed.
+- **Rule 2 now asks when we last *saw* it**, not when it was posted:
+  `lastSeenAt` older than 30 days. A job confirmed this morning stays up
+  however old the posting is; a Himalayas listing seen once and never again
+  still ages out on schedule, because we stop seeing it. Both rules are now
+  about evidence.
+- **No offline test would have caught this.** Every assertion passed —
+  the rule did exactly what it said. What exposed it was one run against
+  real data and looking at the resulting number. Worth remembering that a
+  green suite only proves the code matches the intent, not that the intent
+  was right.
+- **`scripts/resweep.js` exists because fixing a rule doesn't un-hide
+  anything.** The daily run only judges what it just fetched, so rows keep
+  the verdict of whatever rule retired them. The script clears every
+  verdict and decides again from scratch: it reactivated all 3,261 and the
+  new rules correctly retired none of them, since every row had been
+  confirmed hours earlier. Run it after changing any staleness constant.
+
+## Two papercuts, closed
+
+- **The pipeline now reads a `.env` file.** It never did — `connection.js`
+  read `process.env.MONGO_URI` and nothing loaded a file, so a `.env`
+  sitting there would have been silently ignored and every manual run meant
+  pasting a connection string into the shell. It uses Node's own
+  `process.loadEnvFile()` rather than the dotenv package, so the repo keeps
+  its near-zero dependency count. Real environment variables still win, so
+  a laptop's `.env` can never override what CI passes in.
+- **Himalayas was not blocked, it was going too fast.** Two live runs got
+  `429` and contributed zero jobs. A 24h pull is ~123 requests and they
+  were being issued as fast as the event loop could manage them. A 250ms
+  pause between pages plus exponential backoff on 429/503 (honouring
+  `Retry-After` when sent) took it from **0 jobs to 3,520**, at a cost of
+  about a minute.
+- **A 429 mid-run no longer throws away the pages already fetched.** It
+  used to: being throttled on page 80 of 123 discarded 1,600 perfectly good
+  jobs. It now keeps what it has and logs where it stopped, which matches
+  how the rest of the pipeline treats a source failing partway.

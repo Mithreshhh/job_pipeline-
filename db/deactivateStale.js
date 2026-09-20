@@ -15,16 +15,20 @@
  *    that list, it has genuinely been pulled. That inference is only safe
  *    for sources that return everything.
  *
- * 2. AGED OUT. Every other source is a recent-window feed or a keyword
+ * 2. LAPSED. Every other source is a recent-window feed or a keyword
  *    search: Himalayas only answers for the last 24 hours, Arbeitnow and
  *    Jobicy return a page or two of whatever is newest, and the JobSpy and
  *    Freelancer sources return whatever matched a search that day. A job
  *    from any of those drops out of view while still being perfectly live,
- *    so absence proves nothing and only age can be acted on.
+ *    so absence proves nothing - but a posting nobody has re-confirmed in
+ *    a month has almost certainly gone.
  *
- * Getting that distinction wrong is expensive in one direction: treating
- * every source as complete would mark thousands of live Himalayas and
- * LinkedIn listings dead the morning after they were stored.
+ * Both rules are about EVIDENCE, not age. An earlier version of rule 2
+ * retired anything whose `postedAt` was older than 45 days, which on the
+ * first live run hid 3,261 of 7,929 postings - most of them jobs sitting
+ * right there on Greenhouse that morning. "Posted a while ago" is not the
+ * same claim as "gone", and only the second one justifies hiding a job.
+ * Rule 2 now asks when we last *saw* it.
  */
 
 "use strict";
@@ -45,7 +49,13 @@ const { connectToMongo } = require("./connection");
 const COMPLETE_FEED_SOURCES = ["greenhouse", "ashby"];
 
 const DEFAULT_GRACE_DAYS = 2;
-const DEFAULT_MAX_AGE_DAYS = 45;
+
+/**
+ * How long a posting may go unconfirmed before it is retired. Only bites
+ * the window-limited sources, since anything on a complete feed is either
+ * re-confirmed daily or caught by rule 1 long before this.
+ */
+const DEFAULT_UNSEEN_DAYS = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -62,14 +72,14 @@ const daysBefore = (date, days) => new Date(date.getTime() - days * DAY_MS);
  *                                missed run is not proof: a source can
  *                                answer successfully and still return a
  *                                short list because a page timed out.
- * @param {number}   maxAgeDays   how old a posting gets before it is
- *                                retired regardless of source
+ * @param {number}   unseenDays   how long since any source last confirmed
+ *                                a posting before it is retired
  */
 function buildStaleFilters({
   runAt = new Date(),
   seenSources = [],
   graceDays = DEFAULT_GRACE_DAYS,
-  maxAgeDays = DEFAULT_MAX_AGE_DAYS,
+  unseenDays = DEFAULT_UNSEEN_DAYS,
 } = {}) {
   // Intersecting with what we actually saw is the guard that makes this
   // safe: if Greenhouse threw this morning, it contributes no sources, so
@@ -80,38 +90,33 @@ function buildStaleFilters({
   );
 
   const takenDownCutoff = daysBefore(runAt, graceDays);
-  const agedOutCutoff = daysBefore(runAt, maxAgeDays);
+  const lapsedCutoff = daysBefore(runAt, unseenDays);
 
+  // $lt alone would match null, because BSON sorts null before every date -
+  // which would retire any row written before lastSeenAt existed, on the
+  // first run after deploying this.
   const takenDown =
     completeSeen.length === 0
       ? null
       : {
           isActive: true,
           source: { $in: completeSeen },
-          // $lt alone would match null, because BSON sorts null before
-          // every date - which would retire any row written before
-          // lastSeenAt existed, on the first run after deploying this.
           lastSeenAt: { $ne: null, $lt: takenDownCutoff },
         };
 
-  const agedOut = {
+  const lapsed = {
     isActive: true,
-    $or: [
-      { postedAt: { $ne: null, $lt: agedOutCutoff } },
-      // No posting date means we fall back to when we first saw it, which
-      // is the earliest moment we can prove the listing existed.
-      { postedAt: null, fetchedAt: { $ne: null, $lt: agedOutCutoff } },
-    ],
+    lastSeenAt: { $ne: null, $lt: lapsedCutoff },
   };
 
-  return { takenDown, agedOut, takenDownCutoff, agedOutCutoff };
+  return { takenDown, lapsed, takenDownCutoff, lapsedCutoff };
 }
 
 /**
  * Applies both rules and returns how many rows each one retired.
  */
 async function deactivateStaleJobs(options = {}) {
-  const { takenDown, agedOut, takenDownCutoff, agedOutCutoff } =
+  const { takenDown, lapsed, takenDownCutoff, lapsedCutoff } =
     buildStaleFilters(options);
 
   await connectToMongo();
@@ -124,10 +129,10 @@ async function deactivateStaleJobs(options = {}) {
 
   return {
     takenDown: await deactivate(takenDown),
-    agedOut: await deactivate(agedOut),
+    lapsed: await deactivate(lapsed),
     takenDownCutoff,
-    agedOutCutoff,
-    // Null when no complete-feed source reported, which is worth printing:
+    lapsedCutoff,
+    // False when no complete-feed source reported, which is worth printing:
     // it means rule 1 did not run at all rather than finding nothing.
     takenDownChecked: Boolean(takenDown),
   };
@@ -138,5 +143,5 @@ module.exports = {
   buildStaleFilters,
   COMPLETE_FEED_SOURCES,
   DEFAULT_GRACE_DAYS,
-  DEFAULT_MAX_AGE_DAYS,
+  DEFAULT_UNSEEN_DAYS,
 };

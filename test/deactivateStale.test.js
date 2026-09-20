@@ -16,7 +16,7 @@ const {
   buildStaleFilters,
   COMPLETE_FEED_SOURCES,
   DEFAULT_GRACE_DAYS,
-  DEFAULT_MAX_AGE_DAYS,
+  DEFAULT_UNSEEN_DAYS,
 } = require("../db/deactivateStale.js");
 
 const RUN_AT = new Date("2026-09-20T00:30:00.000Z");
@@ -83,33 +83,53 @@ test("a single missed run is not enough to retire a job", () => {
   assert.equal(takenDownCutoff.getTime(), RUN_AT.getTime() - 5 * DAY_MS);
 });
 
-test("age-out falls back to fetchedAt when there's no posting date", () => {
-  const { agedOut } = buildStaleFilters({ runAt: RUN_AT });
-  const cutoff = new Date(RUN_AT.getTime() - DEFAULT_MAX_AGE_DAYS * DAY_MS);
+test("rule 2 retires on when we last SAW a job, not when it was posted", () => {
+  // The bug this replaces: keying on postedAt retired 3,261 of 7,929 rows on
+  // the first live run, most of them jobs sitting on Greenhouse that morning.
+  // "Posted a while ago" is not the same claim as "gone".
+  const { lapsed } = buildStaleFilters({ runAt: RUN_AT });
 
-  assert.deepEqual(agedOut.$or, [
-    { postedAt: { $ne: null, $lt: cutoff } },
-    { postedAt: null, fetchedAt: { $ne: null, $lt: cutoff } },
-  ]);
+  assert.deepEqual(lapsed, {
+    isActive: true,
+    lastSeenAt: {
+      $ne: null,
+      $lt: new Date(RUN_AT.getTime() - DEFAULT_UNSEEN_DAYS * DAY_MS),
+    },
+  });
+  assert.ok(!("postedAt" in lapsed), "postedAt must play no part in it");
+  assert.ok(!("$or" in lapsed));
 });
 
-test("age-out applies to every source, seen or not", () => {
-  // Unlike rule 1 it needs no evidence from this run - a posting from
-  // seven weeks ago is stale whether or not its board answered today.
-  const { agedOut } = buildStaleFilters({ runAt: RUN_AT, seenSources: [] });
+test("a job confirmed today is never retired, however old the posting", () => {
+  const { lapsed } = buildStaleFilters({ runAt: RUN_AT });
+  const cutoff = lapsed.lastSeenAt.$lt;
 
-  assert.equal(agedOut.isActive, true);
-  assert.ok(!("source" in agedOut));
+  // Seen this morning, posted eighteen months ago: still live, still shown.
+  assert.ok(RUN_AT > cutoff);
+});
+
+test("rule 2 applies to every source, seen or not", () => {
+  // Unlike rule 1 it needs no evidence from this run: a posting nobody has
+  // re-confirmed in a month is stale whether or not its board answered today.
+  const { lapsed } = buildStaleFilters({ runAt: RUN_AT, seenSources: [] });
+
+  assert.equal(lapsed.isActive, true);
+  assert.ok(!("source" in lapsed));
+});
+
+test("rule 2 also skips rows written before lastSeenAt existed", () => {
+  const { lapsed } = buildStaleFilters({ runAt: RUN_AT });
+  assert.equal(lapsed.lastSeenAt.$ne, null);
 });
 
 test("both rules only ever touch listings that are still live", () => {
-  const { takenDown, agedOut } = buildStaleFilters({
+  const { takenDown, lapsed } = buildStaleFilters({
     runAt: RUN_AT,
     seenSources: ["greenhouse"],
   });
 
   assert.equal(takenDown.isActive, true);
-  assert.equal(agedOut.isActive, true);
+  assert.equal(lapsed.isActive, true);
 });
 
 test("We Work Remotely is deliberately not a complete feed", () => {

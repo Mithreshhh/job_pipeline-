@@ -219,3 +219,53 @@ test("normalizeEntry: an unknown source fails loudly", () => {
     /No mapper for source/
   );
 });
+
+test("lever: maps a job, and the board supplies the missing company", () => {
+  // Lever jobs carry no company name, only the board does - same as Ashby.
+  const { jobs } = normalizeEntry({
+    source: "lever",
+    company: "meesho",
+    jobs: [
+      {
+        text: "Machine Learning Engineer",
+        hostedUrl: "https://jobs.lever.co/meesho/abc",
+        createdAt: 1758000000000,
+        workplaceType: "onsite",
+        categories: {
+          location: "Bangalore, Karnataka",
+          commitment: "Full-time",
+          department: "Tech",
+        },
+        descriptionPlain: "Build ML systems. 5+ years of experience.",
+      },
+    ],
+  });
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].title, "Machine Learning Engineer");
+  assert.equal(jobs[0].company, "meesho");
+  assert.equal(jobs[0].source, "lever");
+  assert.equal(jobs[0].country, "India");
+  assert.equal(jobs[0].roleCategory, "AI-Tech");
+  assert.equal(jobs[0].workType, "full-time");
+  // createdAt is epoch milliseconds, not seconds.
+  assert.equal(jobs[0].postedAt.slice(0, 4), "2025");
+});
+
+test("lever: a remote workplaceType is trusted even when the location isn't", () => {
+  const { jobs } = normalizeEntry({
+    source: "lever",
+    company: "zeta",
+    jobs: [
+      {
+        text: "Product Designer",
+        hostedUrl: "https://jobs.lever.co/zeta/xyz",
+        workplaceType: "remote",
+        categories: { location: "Bangalore", commitment: "Full-time" },
+      },
+    ],
+  });
+
+  assert.equal(jobs[0].isRemote, true);
+  assert.equal(jobs[0].roleCategory, "Creative");
+});

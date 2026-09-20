@@ -11,3 +11,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# dashboard/ (Next.js)
+.next/
+next-env.d.ts
+*.tsbuildinfo

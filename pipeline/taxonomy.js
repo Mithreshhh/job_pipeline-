@@ -107,6 +107,7 @@ const SOURCES = [
   { value: "weworkremotely", label: "We Work Remotely" },
   { value: "freelancer", label: "Freelancer.com" },
   { value: "greenhouse", label: "Company board" },
+  { value: "lever", label: "Company board" },
   { value: "ashby", label: "Company board" },
   { value: "manual", label: "Posted by the team" },
 ];

@@ -1,0 +1,99 @@
+@import 'tailwindcss';
+
+/*
+ * Palette. The two encoding hues — teal for AI roles, ochre for India — were
+ * checked for colour-vision separation against both surfaces before being
+ * used; everything else is neutral on purpose, so those two carry meaning
+ * rather than decoration.
+ *
+ * Defined as plain custom properties first and mapped into Tailwind's theme
+ * below, so the dark overrides in one media query reach every utility without
+ * a second set of classes.
+ */
+:root {
+  --ground: #f4f5f3;
+  --surface: #fcfcfb;
+  --surface-2: #eef0ec;
+  --ink: #14181a;
+  --ink-2: #4a5359;
+  --ink-3: #79848a;
+  --line: #dfe3df;
+  --line-2: #c9cfc9;
+  --accent: #0a8f73;
+  --accent-ink: #06604e;
+  --accent-wash: #e2f1ec;
+  --signal: #b06a12;
+  --signal-ink: #8a530c;
+  --signal-wash: #f7ecdb;
+  --alarm: #b42318;
+  --alarm-wash: #fdeceb;
+  --track: #e6e9e5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #121514;
+    --surface: #1a1d1c;
+    --surface-2: #232726;
+    --ink: #e9ece9;
+    --ink-2: #a8b1ad;
+    --ink-3: #7d8783;
+    --line: #2d3230;
+    --line-2: #3d4341;
+    --accent: #26ac8c;
+    --accent-ink: #5ed3b6;
+    --accent-wash: #16302a;
+    --signal: #c6862b;
+    --signal-ink: #e0a955;
+    --signal-wash: #33260f;
+    --alarm: #f07167;
+    --alarm-wash: #331a18;
+    --track: #262b29;
+  }
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-signal-wash: var(--signal-wash);
+  --color-alarm: var(--alarm);
+  --color-alarm-wash: var(--alarm-wash);
+  --color-track: var(--track);
+
+  --font-sans:
+    'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+html,
+body {
+  background: var(--ground);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Digits that sit in columns should line up. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(a, button, input, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

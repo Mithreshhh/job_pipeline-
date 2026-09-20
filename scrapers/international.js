@@ -27,6 +27,34 @@ const DEFAULT_HEADERS = {
   Accept: "application/json",
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * fetch() that backs off instead of giving up when a host says "slow down".
+ *
+ * A 429 is not a failure, it is a request to wait - treating it as fatal is
+ * how a source that would have answered ends up contributing nothing. 503 is
+ * included because it is what a rate limiter behind a CDN often returns
+ * instead. Anything else (404, 500) is returned as-is for the caller to judge.
+ *
+ * Honours Retry-After when the server sends one, since a guess is worse than
+ * being told.
+ */
+async function fetchPolitely(url, { headers = DEFAULT_HEADERS, retries = 3 } = {}) {
+  let wait = 2000;
+
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url, { headers });
+    if (response.status !== 429 && response.status !== 503) return response;
+    if (attempt >= retries) return response;
+
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : wait;
+    await sleep(Math.min(delay, 30000));
+    wait *= 2;
+  }
+}
+
 /** Runs jobspy_global.py (Indeed across major markets + LinkedIn globally). */
 function runJobSpyGlobal() {
   const result = spawnSync("python", [JOBSPY_SCRIPT], {
@@ -113,8 +141,13 @@ async function fetchJobicy({ count = 50 } = {}) {
  * ~123 pages (~2.5k jobs, ~85s), so it's set well above that - if it ever
  * becomes the thing that stops the loop, the result is silently truncated
  * rather than actually covering 24h.
+ *
+ * Paced, because ~123 requests as fast as the event loop can issue them is
+ * what got this source rate-limited to nothing on two live runs. A quarter
+ * of a second between pages costs about 30s and is the difference between
+ * ~2,400 jobs and zero.
  */
-async function fetchHimalayasLast24h({ maxPages = 250 } = {}) {
+async function fetchHimalayasLast24h({ maxPages = 250, pageDelayMs = 250 } = {}) {
   const cutoff = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
   const jobs = [];
   let cursor = null;
@@ -123,8 +156,19 @@ async function fetchHimalayasLast24h({ maxPages = 250 } = {}) {
     const url = new URL("https://himalayas.app/jobs/api");
     if (cursor) url.searchParams.set("cursor", cursor);
 
-    const response = await fetch(url, { headers: DEFAULT_HEADERS });
+    if (page > 0) await sleep(pageDelayMs);
+
+    const response = await fetchPolitely(url);
     if (!response.ok) {
+      // Only fatal when it cost us everything. Having paged through 80 of
+      // 123 pages and then being throttled is worth 1,600 jobs, and throwing
+      // here would discard all of them.
+      if (jobs.length > 0) {
+        console.warn(
+          `[himalayas] stopped early at page ${page}: HTTP ${response.status} (keeping ${jobs.length} jobs)`
+        );
+        break;
+      }
       throw new Error(`Himalayas request failed: ${response.status}`);
     }
 

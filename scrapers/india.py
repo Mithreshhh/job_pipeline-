@@ -5,7 +5,8 @@ country_indeed="India".
 Naukri used to be the other half of this file. It was removed: its internal
 search API answers every request with a reCAPTCHA challenge and its public
 search pages return 503, so the only way through would be defeating bot
-protection. India coverage now rides on JobSpy.
+protection. India coverage rides on JobSpy plus the Indian company boards in
+scrapers/aiCompanies.js.
 
 This script does NOT normalize anything - it writes out the raw response
 untouched, so the normalization step later has the original data to work
@@ -17,7 +18,16 @@ from pathlib import Path
 
 from jobspy import scrape_jobs
 
+# India was 7.7% of everything the pipeline stored, and this file was most of
+# the reason: it searched ten AI job titles while the board itself carries
+# seven categories. An Indian student looking for a design or marketing role
+# saw international listings only, because nothing was asking India for them.
+#
+# The list now mirrors the categories in pipeline/taxonomy.js. Keep it that
+# way when either changes - a category with no keyword here is a category with
+# no Indian jobs in it.
 KEYWORDS = [
+    # AI-Tech
     "machine learning engineer",
     "AI engineer",
     "data scientist",
@@ -28,7 +38,38 @@ KEYWORDS = [
     "MLOps",
     "AI researcher",
     "prompt engineer",
+    # AI-NonTech: barely exists as a job title on general boards, but the
+    # few that do post here are exactly the entry-level roles students want.
+    "AI trainer",
+    "data annotation",
+    "AI content",
+    # Tech
+    "software engineer",
+    "backend developer",
+    "frontend developer",
+    "data analyst",
+    "devops engineer",
+    # Creative
+    "video editor",
+    "graphic designer",
+    "motion graphics",
+    "UI UX designer",
+    # Marketing
+    "digital marketing",
+    "social media manager",
+    "performance marketing",
+    "SEO specialist",
+    # Writing
+    "content writer",
+    "copywriter",
+    # Business
+    "business analyst",
+    "product manager",
 ]
+
+# Was 20. Indian listings for one title run well past that, and the cost of
+# asking for more is a slower run rather than a rejected one.
+RESULTS_WANTED = 40
 
 SCRAPERS_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRAPERS_DIR.parent / "db" / "raw"
@@ -42,7 +83,7 @@ def run_jobspy():
             site_name=["indeed", "linkedin"],
             search_term=keyword,
             country_indeed="India",
-            results_wanted=20,
+            results_wanted=RESULTS_WANTED,
         )
         results.append(
             {

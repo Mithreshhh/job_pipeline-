@@ -745,6 +745,37 @@ const MAPPERS = {
     };
   },
 
+  /**
+   * Lever, the third keyless ATS. Added for India coverage: most Indian
+   * startups that publish a machine-readable board are on Lever rather than
+   * Greenhouse or Ashby, so without this they were invisible to us.
+   *
+   * Like Ashby, a Lever job carries no company name - only the board does -
+   * so normalizeJob falls back to the board token.
+   */
+  lever(raw) {
+    const categories = raw.categories || {};
+    const location = categories.location || null;
+    const description = toText(raw.descriptionPlain, raw.additionalPlain);
+
+    return {
+      title: raw.text || null,
+      company: null,
+      location,
+      isRemote:
+        raw.workplaceType === "remote" ||
+        /remote/i.test(toText(location, raw.text)),
+      url: raw.hostedUrl || raw.applyUrl || null,
+      // Epoch milliseconds; toIsoDate already tells ms from seconds.
+      postedAt: toIsoDate(raw.createdAt),
+      matchText: toText(raw.text, categories.department, categories.team, description),
+      // "Full-time", "Contract", "Intern" - Lever's own commitment field.
+      typeText: toText(categories.commitment),
+      levelTitle: toText(raw.text),
+      levelText: description,
+    };
+  },
+
   ashby(raw) {
     const location = raw.location || null;
 
@@ -775,6 +806,7 @@ const SOURCE_ALIASES = {
   freelancer: "freelancer",
   greenhouse: "greenhouse",
   ashby: "ashby",
+  lever: "lever",
   weworkremotely: "weworkremotely",
 };
 

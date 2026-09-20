@@ -14,6 +14,9 @@ schema, and stores them so they can power the Skeo and Menler job boards.
 - `/db` — database setup, writes, the staleness sweep, and the read query
   the job boards use.
 - `/scripts` — one-off or scheduled scripts (e.g. "run all scrapers now").
+- `/dashboard` — a Next.js read-only view of what the pipeline stores: whether
+  last night's run worked, what the board holds, and a browser for the
+  listings. Its own README covers it. Nothing in it writes.
 
 ## Job schema
 
@@ -50,18 +53,23 @@ spellings (`Full-time`, `FULLTIME`, `part_time`, `Gig`) onto these.
 
 Nothing is ever deleted; postings are marked `isActive: false` and revived
 if they come back. `db/deactivateStale.js` runs at the end of every daily
-run and applies two rules:
+run and applies two rules, both of them about evidence rather than age:
 
 1. **Taken down** — the posting is missing from a source that publishes a
    *complete* current listing every run (Greenhouse and Ashby company
    boards), and has been for longer than the grace window (2 days).
-2. **Aged out** — the posting is older than 45 days, whatever its source.
+2. **Lapsed** — no source has confirmed the posting in 30 days.
 
 Rule 1 only ever considers sources that actually returned jobs in that
 run, so a board being down for a morning can't retire everything it holds.
-Every other source is a recent-window feed or a keyword search, so a job
-of theirs going missing means the window moved, not that the role was
-filled — which is why they only ever age out.
+
+Rule 2 keys on `lastSeenAt`, never `postedAt`: a job we saw this morning is
+live however old the posting is. An earlier version tested the posting date
+instead and hid 3,261 of 7,929 listings that were still on their boards.
+
+After changing either constant run `node scripts/resweep.js` — the daily run
+only judges what it just fetched, so older rows otherwise keep the verdict of
+whatever rule retired them.
 
 ## Reading the jobs
 
@@ -98,14 +106,20 @@ npm install
 npm test
 ```
 
-The pipeline reads its connection string from `MONGO_URI` and does **not**
-load a `.env` file, so set it in the shell:
+The connection string comes from `MONGO_URI`. Put it in a `.env` file at the
+project root and it is picked up automatically:
 
 ```
-$env:MONGO_URI = "mongodb+srv://user:pass@host/jobboard"   # PowerShell
-export MONGO_URI="mongodb+srv://user:pass@host/jobboard"   # bash
+MONGO_URI=mongodb+srv://user:pass@host/jobboard
+```
+
+```
 node scripts/runDaily.js
 ```
+
+A real environment variable always wins over the file, so CI is unaffected.
+If your network cannot resolve SRV records, use the long three-host string
+from Atlas → Connect → Drivers with the SRV toggle off.
 
 In CI the same value comes from the `MONGO_URI` GitHub Actions secret.
 Note the name: the two LMSes use `MONGODB_URI` for their own databases,

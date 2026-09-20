@@ -207,7 +207,7 @@ async function runDaily() {
     skipped: 0,
     seenSources: [],
   };
-  let staleSummary = { takenDown: 0, agedOut: 0, takenDownChecked: false };
+  let staleSummary = { takenDown: 0, lapsed: 0, takenDownChecked: false };
 
   if (deduped.length > 0) {
     upsertSummary = await upsertJobs(deduped, { runAt });
@@ -224,7 +224,7 @@ async function runDaily() {
       seenSources: upsertSummary.seenSources,
     });
     console.log(
-      `[stale] ${staleSummary.takenDown} taken down, ${staleSummary.agedOut} aged out`
+      `[stale] ${staleSummary.takenDown} taken down, ${staleSummary.lapsed} unconfirmed`
     );
   } else {
     console.log("[store] nothing to write");
@@ -244,7 +244,7 @@ async function runDaily() {
     ? staleSummary.takenDown
     : "not checked";
   console.log(`Retired (taken down): ${takenDown}`);
-  console.log(`Retired (aged out):  ${staleSummary.agedOut}`);
+  console.log(`Retired (unseen):     ${staleSummary.lapsed}`);
 
   console.log("\nPer source:");
   for (const item of contributions) {
