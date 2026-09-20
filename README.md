@@ -49,27 +49,47 @@ the same file and can be reworded without touching stored data. Anything
 reading this collection should use `normalizeWorkType()` to fold other
 spellings (`Full-time`, `FULLTIME`, `part_time`, `Gig`) onto these.
 
-## Staleness
+## The board: a rolling ten-day window
 
-Nothing is ever deleted; postings are marked `isActive: false` and revived
-if they come back. `db/deactivateStale.js` runs at the end of every daily
-run and applies two rules, both of them about evidence rather than age:
+The board shows jobs posted in the last **10 days** and nothing older, so each
+new day pushes the oldest day off the back. It keys on the employer's own
+posting date, which is present on 99.9% of stored rows, and falls back to when
+we first saw a listing for the handful without one.
 
-1. **Taken down** — the posting is missing from a source that publishes a
-   *complete* current listing every run (Greenhouse and Ashby company
-   boards), and has been for longer than the grace window (2 days).
-2. **Lapsed** — no source has confirmed the posting in 30 days.
+The window is applied **at read time** in `db/readJobs.js`, not written into a
+flag by the nightly run. It is therefore exact to the second, and changing
+`FRESH_DAYS` takes effect on the next page load with nothing to re-judge. Pass
+`freshDays: 0` for an admin view of everything stored.
 
-Rule 1 only ever considers sources that actually returned jobs in that
-run, so a board being down for a morning can't retire everything it holds.
+Against real data: 10,696 stored, **5,273 on the board**. The curve is steep —
+3 days gives 4,160 and 30 days only 6,633 — because these feeds are heavily
+weighted to the last week, so widening the window buys less than it looks like
+it should.
 
-Rule 2 keys on `lastSeenAt`, never `postedAt`: a job we saw this morning is
-live however old the posting is. An earlier version tested the posting date
-instead and hid 3,261 of 7,929 listings that were still on their boards.
+## Withdrawal
 
-After changing either constant run `node scripts/resweep.js` — the daily run
-only judges what it just fetched, so older rows otherwise keep the verdict of
-whatever rule retired them.
+Separately, a posting is marked `isActive: false` when the employer takes it
+down: it is missing from a source that publishes a *complete* current listing
+every run (the Greenhouse, Lever and Ashby company boards) and has been for
+longer than the grace window (2 days). That rule only ever considers sources
+that actually returned jobs in the run, so a board being down for a morning
+cannot retire everything it holds.
+
+It deletes nothing — a posting that comes back is revived by the next upsert.
+`isActive` means exactly one thing, *the employer withdrew this*; age is the
+window's business and never touches this flag. Merging the two is what caused
+this project's worst bug, which hid 3,261 of 7,929 live listings.
+
+Run `node scripts/resweep.js` after changing the grace window. It is not needed
+after changing `FRESH_DAYS`.
+
+## Storage
+
+`db/purgeOldJobs.js` runs at the end of each daily run and is the only thing
+here that deletes. It removes rows older than **60 days** — six times the board
+window, so widening the window never finds the jobs already thrown away.
+Without it the collection grows by ~2,700 rows a day, about a million a year
+against a 512MB free tier.
 
 ## Reading the jobs
 

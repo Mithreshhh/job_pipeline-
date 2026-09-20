@@ -13,6 +13,10 @@
  *   deliberately asks otherwise, so nobody has to remember to add it and
  *   a forgotten filter can't put dead links in front of a student.
  *
+ *   Only recent ones. The board shows a rolling window of the last
+ *   FRESH_DAYS days and nothing older - see below for why that is applied
+ *   here rather than by the nightly sweep.
+ *
  *   Every facet value is checked against pipeline/taxonomy.js before it
  *   reaches Mongo. These values arrive from a query string, and an
  *   unchecked one lets a visitor post `?workType[$ne]=x` and hand Mongo an
@@ -33,6 +37,46 @@ const {
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+
+/**
+ * The rolling window. A job is shown for its first FRESH_DAYS days and then
+ * falls off the back of the board, so day 11 quietly drops what came in on
+ * day 1 while day 11's own jobs arrive.
+ *
+ * It is applied HERE, at read time, rather than by the nightly sweep writing
+ * isActive: false. Three reasons:
+ *
+ *   - It is exact. A swept flag is only as fresh as the last run, so a job
+ *     that crossed the line at noon would sit on the board until 6am.
+ *   - Changing the window is a one-line change that takes effect at once.
+ *     Sweeping would mean re-judging every stored row (scripts/resweep.js)
+ *     every time you wanted 14 days instead of 10.
+ *   - It leaves isActive meaning one thing only: the employer took this
+ *     down. Age and withdrawal are different facts and conflating them into
+ *     one flag is what made the first version of the sweep wrong.
+ *
+ * Measured against real data: 99.9% of stored jobs carry a real postedAt
+ * (6 of 10,696 do not, all LinkedIn), so the window keys on the employer's
+ * own posting date and only falls back to when we first saw it.
+ */
+const FRESH_DAYS = 10;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * "Posted within the window, or - for the handful of listings whose source
+ * gave no date - first seen within it."
+ */
+function freshnessFilter(days = FRESH_DAYS, now = Date.now()) {
+  const cutoff = new Date(now - days * DAY_MS);
+
+  return {
+    $or: [
+      { postedAt: { $gte: cutoff } },
+      { postedAt: null, fetchedAt: { $gte: cutoff } },
+    ],
+  };
+}
 
 /**
  * Accepts `?x=a&x=b`, `?x=a,b` or a plain array, and keeps only the values
@@ -74,10 +118,18 @@ function cleanBoolean(input) {
 
 function buildJobQuery(params = {}) {
   const query = {};
+  const and = [];
 
   // includeInactive exists for admin screens and for debugging what the
   // staleness sweep did. It is never driven by a student-facing filter.
   if (!params.includeInactive) query.isActive = true;
+
+  // freshDays: 0 turns the window off entirely, for an admin view that wants
+  // to see everything stored. Anything else narrows or widens it.
+  const freshDays = params.freshDays === undefined ? FRESH_DAYS : Number(params.freshDays);
+  if (Number.isFinite(freshDays) && freshDays > 0) {
+    and.push(freshnessFilter(freshDays));
+  }
 
   const categories = cleanList(params.category, isRoleCategory);
   if (categories.length) query.roleCategory = { $in: categories };
@@ -99,6 +151,10 @@ function buildJobQuery(params = {}) {
 
   const search = cleanString(params.search);
   if (search) query.$text = { $search: search };
+
+  // $and, not a bare $or, because the freshness window is itself an $or and a
+  // second one would silently overwrite the first.
+  if (and.length) query.$and = and;
 
   return query;
 }
@@ -184,6 +240,8 @@ module.exports = {
   buildJobQuery,
   buildJobSort,
   buildPagination,
+  freshnessFilter,
+  FRESH_DAYS,
   DEFAULT_LIMIT,
   MAX_LIMIT,
 };

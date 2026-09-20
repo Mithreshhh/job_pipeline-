@@ -540,3 +540,44 @@ A new section gets added every time a task is finished.
   used to: being throttled on page 80 of 123 discarded 1,600 perfectly good
   jobs. It now keeps what it has and logs where it stopped, which matches
   how the rest of the pipeline treats a source failing partway.
+
+## The rolling ten-day board
+
+- **What was asked for**: a board that only ever shows jobs from the last
+  ten days. Accumulate for ten days, then each new day pushes the oldest
+  day off the back — day 11 drops day 1's jobs and adds its own.
+- **It keys on the employer's posting date, not on when we saw it.**
+  That was worth measuring rather than assuming: `postedAt` turns out to be
+  present on **99.9%** of stored rows — 6 of 10,696 lack it, all LinkedIn —
+  so "ten days old" can mean what it actually says. The six fall back to
+  when we first saw them.
+- **The window is applied when the board reads, not written into a flag by
+  the nightly run.** Three reasons, and the third is the real one:
+  - It is exact. A swept flag is only as fresh as the last run, so a job
+    crossing the line at noon would linger until 6am.
+  - Changing it is a one-line change that takes effect immediately, instead
+    of needing every stored row re-judged.
+  - It keeps `isActive` meaning exactly one thing: *the employer withdrew
+    this*. Age and withdrawal are different facts, and merging them into one
+    flag is precisely what produced this project's worst bug.
+- **So the nightly sweep lost a rule and got simpler.** It now decides
+  withdrawal only — a job missing from a complete feed (Greenhouse, Ashby,
+  now Lever) for more than the grace window. The old 30-day "unconfirmed"
+  rule is gone: with a ten-day board nothing survives to reach it.
+- **What the window does to the numbers**: 10,696 stored → **5,273 on the
+  board**. Roughly half, and the shape is steep — 3 days gives 4,160 and 30
+  days only 6,633, because these feeds are heavily weighted to the last
+  week. Widening the window buys much less than it looks like it should.
+- **`db/purgeOldJobs.js` is new, and is the only thing in the pipeline that
+  deletes.** Without it the collection only grows: ~2,700 new rows a day is
+  about a million a year, and the free Atlas tier stops at 512MB. It
+  deletes at 60 days, six times the board's window — the margin is what
+  lets you widen the window to fourteen days and immediately have the jobs
+  to fill it, and what you read when asking why a listing never appeared.
+- **A row whose dates are both unknown is never deleted.** Deleting is the
+  one irreversible act here, so the filter requires a real date rather than
+  treating "no date" as "old".
+- **A latent bug fell out of this.** The dashboard's place filter assigned
+  to `filter.$or`, and the window is itself an `$or` — the second would
+  have silently replaced the first, so "India" plus the window would have
+  quietly returned the wrong set. Both now go under one `$and`.

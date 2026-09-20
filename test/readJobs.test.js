@@ -17,15 +17,52 @@ const {
   buildJobQuery,
   buildJobSort,
   buildPagination,
+  freshnessFilter,
+  FRESH_DAYS,
   MAX_LIMIT,
   DEFAULT_LIMIT,
 } = require("../db/readJobs.js");
 
+/** The window is time-based, so tests compare the rest of the query to it. */
+const withoutWindow = (query) => {
+  const { $and, ...rest } = query;
+  return rest;
+};
+
 test("a bare query still scopes to live listings", () => {
   // Nobody should have to remember to add isActive; forgetting it would
   // put retired links in front of a student.
-  assert.deepEqual(buildJobQuery(), { isActive: true });
-  assert.deepEqual(buildJobQuery({}), { isActive: true });
+  assert.deepEqual(withoutWindow(buildJobQuery()), { isActive: true });
+  assert.deepEqual(withoutWindow(buildJobQuery({})), { isActive: true });
+});
+
+test("the ten-day window is on by default and can be widened or waived", () => {
+  // The rolling board: a job shows for its first FRESH_DAYS days and then
+  // falls off the back, so day 11 drops what arrived on day 1.
+  assert.equal(FRESH_DAYS, 10);
+
+  const cutoffOf = (query) => query.$and[0].$or[0].postedAt.$gte.getTime();
+  const now = Date.now();
+
+  const byDefault = cutoffOf(buildJobQuery({}));
+  const wider = cutoffOf(buildJobQuery({ freshDays: 30 }));
+
+  // Roughly, because the two queries are built microseconds apart.
+  assert.ok(Math.abs(now - byDefault - 10 * 86400000) < 5000);
+  assert.ok(wider < byDefault, "a wider window reaches further back");
+
+  // freshDays: 0 is the admin view - everything ever stored.
+  assert.ok(!("$and" in buildJobQuery({ freshDays: 0 })));
+});
+
+test("the window falls back to first-seen only where there is no posting date", () => {
+  // 99.9% of stored jobs carry a real postedAt, so the fallback is for the
+  // handful whose source gave none - not the common path.
+  const [byPosted, byFetched] = freshnessFilter(10).$or;
+
+  assert.ok("postedAt" in byPosted);
+  assert.equal(byFetched.postedAt, null);
+  assert.ok("fetchedAt" in byFetched);
 });
 
 test("includeInactive is the only way to see retired listings", () => {
@@ -68,7 +105,7 @@ test("a query string cannot smuggle a Mongo operator in", () => {
     remote: { $ne: false },
   });
 
-  assert.deepEqual(query, { isActive: true });
+  assert.deepEqual(withoutWindow(query), { isActive: true });
 });
 
 test("remote distinguishes 'not asked' from 'asked for false'", () => {

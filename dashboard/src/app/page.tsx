@@ -4,6 +4,7 @@ import JobList from '@/components/JobList'
 import { Bar, Eyebrow, Panel, Tile, TileRow } from '@/components/ui'
 import { isAuthenticated, usingDefaultPassword } from '@/lib/auth'
 import {
+  FRESH_DAYS,
   getCategoryMix,
   getPulse,
   listJobs,
@@ -155,7 +156,7 @@ export default async function Page({
               Jobs Pipeline
             </h1>
             <span className="font-mono text-[11.5px] text-ink-3">
-              {nf(pulse.active)} live of {nf(pulse.total)} stored
+              {nf(pulse.onBoard)} on the board of {nf(pulse.total)} stored
             </span>
           </div>
           <a
@@ -185,24 +186,24 @@ export default async function Page({
           <Eyebrow>The live board</Eyebrow>
           <TileRow>
             <Tile
-              label="Live"
-              value={nf(pulse.active)}
-              note={`${nf(pulse.retired)} retired and hidden`}
+              label="On the board"
+              value={nf(pulse.onBoard)}
+              note={`posted in the last ${FRESH_DAYS} days`}
             />
             <Tile
               label="In India"
-              value={pct(pulse.india, pulse.active)}
+              value={pct(pulse.india, pulse.onBoard)}
               note={`${nf(pulse.india)} postings`}
               tone="signal"
             />
             <Tile
               label="Remote"
-              value={pct(pulse.remote, pulse.active)}
+              value={pct(pulse.remote, pulse.onBoard)}
               note={`${nf(pulse.remote)} open to remote`}
             />
             <Tile
               label="AI roles"
-              value={pct(pulse.ai, pulse.active)}
+              value={pct(pulse.ai, pulse.onBoard)}
               note={`${nf(pulse.ai)} tech and non-tech`}
               tone="accent"
             />
@@ -213,6 +214,12 @@ export default async function Page({
               tone={pulse.aiIndia < 100 ? 'alarm' : 'plain'}
             />
           </TileRow>
+          <p className="mt-2.5 text-[12px] text-ink-3">
+            The board is a rolling {FRESH_DAYS}-day window, so a job shows for
+            its first {FRESH_DAYS} days and then falls off the back.{' '}
+            {nf(pulse.total)} postings are stored in all
+            {pulse.retired > 0 ? `, ${nf(pulse.retired)} of them withdrawn by the employer` : ''}.
+          </p>
         </section>
 
         <section className="mt-7">

@@ -1,10 +1,10 @@
 /**
- * Tests for the staleness rules.
+ * Tests for the withdrawal rule and the purge.
  *
- * These matter more than most: the failure mode is silent and large. Get
- * the source guard wrong and a morning where LinkedIn is blocked retires
- * every LinkedIn job we hold; get the null handling wrong and the first
- * run after deploying retires everything stored before it.
+ * The failure mode here is silent and large. Get the source guard wrong and
+ * a morning where Greenhouse is blocked retires every Greenhouse job we
+ * hold; get the null handling wrong and the first run after a deploy
+ * retires everything stored before it.
  */
 
 "use strict";
@@ -16,8 +16,9 @@ const {
   buildStaleFilters,
   COMPLETE_FEED_SOURCES,
   DEFAULT_GRACE_DAYS,
-  DEFAULT_UNSEEN_DAYS,
 } = require("../db/deactivateStale.js");
+const { buildPurgeFilter, DEFAULT_PURGE_DAYS } = require("../db/purgeOldJobs.js");
+const { FRESH_DAYS } = require("../db/readJobs.js");
 
 const RUN_AT = new Date("2026-09-20T00:30:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -25,12 +26,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 test("only complete-feed sources can be retired for going missing", () => {
   const { takenDown } = buildStaleFilters({
     runAt: RUN_AT,
-    seenSources: ["greenhouse", "ashby", "linkedin", "himalayas"],
+    seenSources: ["greenhouse", "ashby", "lever", "linkedin", "himalayas"],
   });
 
   // Himalayas only answers for the last 24h and LinkedIn is a keyword
   // search, so a job of theirs dropping out of view proves nothing.
-  assert.deepEqual(takenDown.source, { $in: ["greenhouse", "ashby"] });
+  assert.deepEqual(takenDown.source, { $in: ["greenhouse", "ashby", "lever"] });
 });
 
 test("a source that didn't report this run is left alone", () => {
@@ -55,8 +56,8 @@ test("no complete-feed source means the rule does not run at all", () => {
 });
 
 test("rows that predate lastSeenAt are not swept up", () => {
-  // BSON sorts null before every date, so a bare $lt would match every
-  // row written before this field existed.
+  // BSON sorts null before every date, so a bare $lt would match every row
+  // written before this field existed.
   const { takenDown } = buildStaleFilters({
     runAt: RUN_AT,
     seenSources: ["greenhouse"],
@@ -73,68 +74,49 @@ test("a single missed run is not enough to retire a job", () => {
   // Sources answer successfully and still return a short list when a page
   // times out, so the grace window has to be more than one run.
   assert.ok(DEFAULT_GRACE_DAYS >= 2);
-
-  const { takenDownCutoff } = buildStaleFilters({
-    runAt: RUN_AT,
-    seenSources: ["greenhouse"],
-    graceDays: 5,
-  });
-
-  assert.equal(takenDownCutoff.getTime(), RUN_AT.getTime() - 5 * DAY_MS);
 });
 
-test("rule 2 retires on when we last SAW a job, not when it was posted", () => {
-  // The bug this replaces: keying on postedAt retired 3,261 of 7,929 rows on
-  // the first live run, most of them jobs sitting on Greenhouse that morning.
-  // "Posted a while ago" is not the same claim as "gone".
-  const { lapsed } = buildStaleFilters({ runAt: RUN_AT });
+test("the sweep judges withdrawal only, never age", () => {
+  // Age is the board's rolling window, applied at read time. An earlier
+  // version put both facts in one flag and hid 3,261 live postings.
+  const filters = buildStaleFilters({ runAt: RUN_AT, seenSources: ["greenhouse"] });
 
-  assert.deepEqual(lapsed, {
-    isActive: true,
-    lastSeenAt: {
-      $ne: null,
-      $lt: new Date(RUN_AT.getTime() - DEFAULT_UNSEEN_DAYS * DAY_MS),
-    },
-  });
-  assert.ok(!("postedAt" in lapsed), "postedAt must play no part in it");
-  assert.ok(!("$or" in lapsed));
-});
-
-test("a job confirmed today is never retired, however old the posting", () => {
-  const { lapsed } = buildStaleFilters({ runAt: RUN_AT });
-  const cutoff = lapsed.lastSeenAt.$lt;
-
-  // Seen this morning, posted eighteen months ago: still live, still shown.
-  assert.ok(RUN_AT > cutoff);
-});
-
-test("rule 2 applies to every source, seen or not", () => {
-  // Unlike rule 1 it needs no evidence from this run: a posting nobody has
-  // re-confirmed in a month is stale whether or not its board answered today.
-  const { lapsed } = buildStaleFilters({ runAt: RUN_AT, seenSources: [] });
-
-  assert.equal(lapsed.isActive, true);
-  assert.ok(!("source" in lapsed));
-});
-
-test("rule 2 also skips rows written before lastSeenAt existed", () => {
-  const { lapsed } = buildStaleFilters({ runAt: RUN_AT });
-  assert.equal(lapsed.lastSeenAt.$ne, null);
-});
-
-test("both rules only ever touch listings that are still live", () => {
-  const { takenDown, lapsed } = buildStaleFilters({
-    runAt: RUN_AT,
-    seenSources: ["greenhouse"],
-  });
-
-  assert.equal(takenDown.isActive, true);
-  assert.equal(lapsed.isActive, true);
+  assert.deepEqual(Object.keys(filters).sort(), ["takenDown", "takenDownCutoff"]);
+  assert.ok(!("postedAt" in filters.takenDown));
+  assert.equal(filters.takenDown.isActive, true);
 });
 
 test("We Work Remotely is deliberately not a complete feed", () => {
   // Its RSS is capped at a page of recent items, so a job falling off the
   // end means the feed moved on, not that the role was filled.
   assert.ok(!COMPLETE_FEED_SOURCES.includes("weworkremotely"));
-  assert.deepEqual([...COMPLETE_FEED_SOURCES].sort(), ["ashby", "greenhouse"]);
+  assert.deepEqual([...COMPLETE_FEED_SOURCES].sort(), ["ashby", "greenhouse", "lever"]);
+});
+
+test("purge keeps well clear of the board's window", () => {
+  // The margin is what lets you widen the window without having thrown the
+  // jobs away, and what you read when asking why a listing never appeared.
+  assert.ok(DEFAULT_PURGE_DAYS > FRESH_DAYS * 3);
+});
+
+test("purge judges a row on the same date the board judged it by", () => {
+  const { filter, cutoff } = buildPurgeFilter({
+    now: RUN_AT.getTime(),
+    purgeDays: 60,
+  });
+
+  assert.equal(cutoff.getTime(), RUN_AT.getTime() - 60 * DAY_MS);
+  assert.deepEqual(filter.$or, [
+    { postedAt: { $ne: null, $lt: cutoff } },
+    { postedAt: null, fetchedAt: { $ne: null, $lt: cutoff } },
+  ]);
+});
+
+test("purge never deletes a row whose dates are both unknown", () => {
+  // Deleting is the one irreversible thing here, so a row we can't date is
+  // kept rather than guessed at.
+  const { filter } = buildPurgeFilter({ now: RUN_AT.getTime() });
+
+  assert.equal(filter.$or[0].postedAt.$ne, null);
+  assert.equal(filter.$or[1].fetchedAt.$ne, null);
 });

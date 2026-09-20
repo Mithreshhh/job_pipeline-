@@ -44,6 +44,35 @@ const COLLECTION = 'jobs'
 export const DEFAULT_LIMIT = 50
 export const MAX_LIMIT = 200
 
+/**
+ * The board's rolling window: a job shows for its first FRESH_DAYS days and
+ * then falls off the back, so day 11 drops what arrived on day 1 while day
+ * 11's own jobs come in.
+ *
+ * Applied at read time rather than written into a flag by the nightly run,
+ * so it is exact to the second and changing it takes effect immediately.
+ * Mirrors FRESH_DAYS in the pipeline's db/readJobs.js — change both.
+ */
+export const FRESH_DAYS = 10
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * "Posted within the window, or — for the handful of listings whose source
+ * gave no date — first seen within it." 99.9% of stored jobs carry a real
+ * postedAt, so the fallback is the exception, not the path.
+ */
+export function freshnessFilter(days = FRESH_DAYS, now = Date.now()) {
+  const cutoff = new Date(now - days * DAY_MS)
+
+  return {
+    $or: [
+      { postedAt: { $gte: cutoff } },
+      { postedAt: null, fetchedAt: { $gte: cutoff } },
+    ],
+  }
+}
+
 async function jobs() {
   const db = await mongoDb()
   return db.collection<Job>(COLLECTION)
@@ -61,6 +90,8 @@ export type JobQuery = {
   source?: string[]
   place?: string[]
   includeRetired?: boolean
+  /** Widen or waive the rolling window. 0 shows everything ever stored. */
+  freshDays?: number
   page?: number
 }
 
@@ -87,7 +118,10 @@ export function parseQuery(
   params: Record<string, string | string[] | undefined>,
 ): JobQuery {
   const page = Number.parseInt(String(params.page ?? ''), 10)
+  // `?window=all` is the admin view: everything stored, not just the board.
+  const freshDays = params.window === 'all' ? 0 : FRESH_DAYS
   return {
+    freshDays,
     q: typeof params.q === 'string' ? params.q.trim().slice(0, 120) : '',
     category: clean(params.category, ROLE_CATEGORY_VALUES),
     workType: clean(params.workType, WORK_TYPE_VALUES),
@@ -101,10 +135,16 @@ export function parseQuery(
 
 export function buildFilter(query: JobQuery): Filter<Job> {
   const filter: Filter<Job> = {}
+  const and: Filter<Job>[] = []
 
   // Forced on unless something deliberately opts out, so no caller has to
   // remember it and a forgotten filter can't surface dead links.
   if (!query.includeRetired) filter.isActive = true
+
+  const freshDays = query.freshDays === undefined ? FRESH_DAYS : query.freshDays
+  if (Number.isFinite(freshDays) && freshDays > 0) {
+    and.push(freshnessFilter(freshDays) as Filter<Job>)
+  }
 
   if (query.category?.length) filter.roleCategory = { $in: query.category }
   if (query.workType?.length) filter.workType = { $in: query.workType }
@@ -116,10 +156,15 @@ export function buildFilter(query: JobQuery): Filter<Job> {
     if (query.place.includes('India')) or.push({ country: 'India' })
     if (query.place.includes('International')) or.push({ country: { $ne: 'India' } })
     if (query.place.includes('Remote')) or.push({ isRemote: true })
-    if (or.length) filter.$or = or
+    if (or.length) and.push({ $or: or })
   }
 
   if (query.q) filter.$text = { $search: query.q }
+
+  // Everything optional goes under one $and. The window and the place filter
+  // are both $or clauses, and assigning them to filter.$or in turn would
+  // mean the second silently replaced the first.
+  if (and.length) filter.$and = and
 
   return filter
 }
@@ -172,9 +217,13 @@ export type Pulse = {
   seenInLastRun: number
   /** Rows the most recent run saw for the first time. */
   newInLastRun: number
+  /** Everything ever stored, including what has fallen out of the window. */
   total: number
+  /** Not withdrawn by the employer. */
   active: number
   retired: number
+  /** What the board actually shows: live and inside the rolling window. */
+  onBoard: number
   india: number
   remote: number
   ai: number
@@ -204,18 +253,24 @@ export async function getPulse(): Promise<Pulse> {
 
   const lastRunAt = newest[0]?.lastSeenAt ?? null
 
-  const [total, active, india, remote, ai, aiIndia, seenInLastRun, newInLastRun, bySource] =
+  // Everything below the first two counts is scoped to the board — live AND
+  // inside the rolling window — because that is what a reader sees. Counting
+  // the whole collection would quote numbers no page ever shows.
+  const onBoardFilter = { isActive: true, ...freshnessFilter() } as Filter<Job>
+  const onBoardAnd = (extra: Filter<Job>) =>
+    ({ isActive: true, $and: [freshnessFilter(), extra] }) as Filter<Job>
+
+  const [total, active, onBoard, india, remote, ai, aiIndia, seenInLastRun, newInLastRun, bySource] =
     await Promise.all([
       col.countDocuments({}),
       col.countDocuments({ isActive: true }),
-      col.countDocuments({ isActive: true, country: 'India' }),
-      col.countDocuments({ isActive: true, isRemote: true }),
-      col.countDocuments({ isActive: true, roleCategory: { $in: AI_CATEGORIES } }),
-      col.countDocuments({
-        isActive: true,
-        country: 'India',
-        roleCategory: { $in: AI_CATEGORIES },
-      }),
+      col.countDocuments(onBoardFilter),
+      col.countDocuments(onBoardAnd({ country: 'India' })),
+      col.countDocuments(onBoardAnd({ isRemote: true })),
+      col.countDocuments(onBoardAnd({ roleCategory: { $in: AI_CATEGORIES } })),
+      col.countDocuments(
+        onBoardAnd({ country: 'India', roleCategory: { $in: AI_CATEGORIES } }),
+      ),
       lastRunAt ? col.countDocuments({ lastSeenAt: lastRunAt }) : 0,
       lastRunAt ? col.countDocuments({ fetchedAt: { $gte: lastRunAt } }) : 0,
       lastRunAt
@@ -247,6 +302,7 @@ export async function getPulse(): Promise<Pulse> {
     total,
     active,
     retired: total - active,
+    onBoard,
     india,
     remote,
     ai,
@@ -265,7 +321,9 @@ export async function getCategoryMix(): Promise<Distribution[]> {
   const col = await jobs()
   const rows = await col
     .aggregate<{ _id: string | null; n: number; india: number }>([
-      { $match: { isActive: true } },
+      // The board, not the archive: the mix should describe what a reader
+      // can actually click on.
+      { $match: { isActive: true, $and: [freshnessFilter()] } },
       {
         $group: {
           _id: '$roleCategory',

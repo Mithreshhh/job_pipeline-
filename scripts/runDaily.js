@@ -20,6 +20,7 @@ const { normalizeRaw } = require("../pipeline/normalize.js");
 const { dedupeJobs } = require("../pipeline/dedupe.js");
 const { upsertJobs } = require("../db/upsertJobs.js");
 const { deactivateStaleJobs } = require("../db/deactivateStale.js");
+const { purgeOldJobs } = require("../db/purgeOldJobs.js");
 const { disconnectFromMongo } = require("../db/connection.js");
 
 const SCRAPERS_DIR = path.join(__dirname, "..", "scrapers");
@@ -207,7 +208,8 @@ async function runDaily() {
     skipped: 0,
     seenSources: [],
   };
-  let staleSummary = { takenDown: 0, lapsed: 0, takenDownChecked: false };
+  let staleSummary = { takenDown: 0, takenDownChecked: false };
+  let purgeSummary = { deleted: 0 };
 
   if (deduped.length > 0) {
     upsertSummary = await upsertJobs(deduped, { runAt });
@@ -215,20 +217,27 @@ async function runDaily() {
       `[store] ${upsertSummary.upserted} new, ${upsertSummary.modified} updated, ${upsertSummary.skipped} skipped (no url)`
     );
 
-    // Retire what has gone away, using only the sources that answered this
-    // run. Skipped entirely when nothing was stored: a run that wrote no
-    // jobs has no evidence about what is still live, and acting on it
+    // Retire what the employer pulled, using only the sources that answered
+    // this run. Skipped entirely when nothing was stored: a run that wrote
+    // no jobs has no evidence about what is still live, and acting on it
     // would empty the board on the first bad morning.
+    //
+    // Age is not judged here - the board's ten-day window is applied when it
+    // reads, in db/readJobs.js.
     staleSummary = await deactivateStaleJobs({
       runAt,
       seenSources: upsertSummary.seenSources,
     });
-    console.log(
-      `[stale] ${staleSummary.takenDown} taken down, ${staleSummary.lapsed} unconfirmed`
-    );
+    console.log(`[stale] ${staleSummary.takenDown} taken down by the employer`);
+
+    // Bound the collection. Nothing here is on the board any more - it is
+    // well past the window - so this is storage housekeeping, not a rule.
+    purgeSummary = await purgeOldJobs();
+    console.log(`[purge] ${purgeSummary.deleted} rows older than the keep window deleted`);
   } else {
     console.log("[store] nothing to write");
     console.log("[stale] skipped - nothing was stored, so nothing is proven");
+    console.log("[purge] skipped");
   }
 
   console.log("\n=== Summary ===");
@@ -244,7 +253,7 @@ async function runDaily() {
     ? staleSummary.takenDown
     : "not checked";
   console.log(`Retired (taken down): ${takenDown}`);
-  console.log(`Retired (unseen):     ${staleSummary.lapsed}`);
+  console.log(`Deleted (long past):  ${purgeSummary.deleted}`);
 
   console.log("\nPer source:");
   for (const item of contributions) {
@@ -265,6 +274,7 @@ async function runDaily() {
     failed,
     upsertSummary,
     staleSummary,
+    purgeSummary,
   };
 }
 
