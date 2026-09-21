@@ -14,8 +14,19 @@
 "use strict";
 
 const { createJob } = require("./schema");
+const SYLLABUS = require("./syllabus");
 
-/** Technical AI roles - the list the scrapers search with. */
+/**
+ * Technical AI roles, used to classify an incoming title as AI-Tech.
+ *
+ * This is a classifier list, not a search list - the two used to be the same
+ * and no longer are. scrapers/india.py deliberately stopped searching for
+ * MLOps, computer vision, deep learning, NLP and AI research, because the
+ * syllabus does not teach them and pipeline/syllabus.js ranks them at the
+ * bottom. They stay here because such jobs still arrive from the
+ * international boards, and one arriving should still be filed as AI-Tech
+ * rather than dropped.
+ */
 const AI_TECH_KEYWORDS = [
   "machine learning engineer",
   "AI engineer",
@@ -552,75 +563,120 @@ function classifyRole(titleText, descriptionText = "", { isGig = false } = {}) {
  * ------------------------------------------------------------------ */
 
 /** What the classifier already concluded, as a starting point. */
-const CATEGORY_BASE = {
-  "AI-Tech": 60,
-  "AI-NonTech": 55,
-  Tech: 30,
-  Creative: 20,
-  Marketing: 20,
-  Writing: 20,
-  Business: 10,
-};
-
 /**
- * Named tools and techniques. A title carrying one of these is describing
- * work with current AI systems, whatever the job is called - which is the
- * thing these courses actually teach.
- */
-const AI_TOOL_PATTERNS = [
-  /\bclaude\b/i,
-  /\b(chat\s?gpt|gpt-?\d)\b/i,
-  /\bllms?\b/i,
-  /\bgen(erative)?\s?ai\b/i,
-  /\bprompt(ing|s)?\b/i,
-  /\brag\b/i,
-  /\bagentic\b/i,
-  /\bai\s+agents?\b/i,
-  /\bcopilot\b/i,
-  /\blangchain\b/i,
-  /\bhugging\s?face\b/i,
-  /\bfine[\s-]?tun(e|ing)\b/i,
-  /\bdiffusion\b/i,
-  /\bmidjourney\b/i,
-];
-
-/**
- * The generalist shape: someone who applies AI across a business rather
- * than building models. It is what "AI generalist" means as a job, and it
- * turns up under a dozen different titles.
- */
-const GENERALIST_PATTERNS = [
-  /\bai\s+(generalist|consultant|specialist|strategist|lead)\b/i,
-  /\b(automation|workflow)\s+(specialist|engineer|consultant|manager)\b/i,
-  /\bno[\s-]?code\b/i,
-  /\bai\s+(ops|operations|product|program)\b/i,
-  /\bsolutions?\s+(architect|engineer),?\s+ai\b/i,
-  /\bforward[\s-]deployed\b/i,
-];
-
-/**
- * How well a job matches what these students are being trained for, 0-100.
+ * Which syllabus terms a posting actually evidences.
  *
- * Kept deliberately simple and readable rather than tuned: it decides the
- * order of a list, not whether a job is shown at all, so being roughly
- * right in the right direction is worth more than precision nobody can
- * explain when they ask why a listing is where it is.
+ * Returns the matched term names, most valuable first, along with the score
+ * they earned. The names are what gets stored on the job: they are what make
+ * a position on the board explainable ("matched Claude, n8n, prompt
+ * engineering") and they are what lets the score be recomputed later without
+ * the description, which is never stored.
  */
-function scoreRelevance(titleText, descriptionText, roleCategory) {
-  let score = CATEGORY_BASE[roleCategory] ?? 0;
-
+function collectSyllabusEvidence(titleText, descriptionText) {
   const title = toText(titleText);
   const description = toText(descriptionText);
 
-  // The title is trusted most, because it is what the employer chose to
-  // call the job. A description mentioning AI is worth far less - almost
-  // every company blurb does.
-  if (matchesAny(title, AI_TOOL_PATTERNS)) score += 25;
-  else if (matchesAny(description, AI_TOOL_PATTERNS)) score += 8;
+  const hits = [];
 
-  if (matchesAny(title, GENERALIST_PATTERNS)) score += 15;
+  for (const band of SYLLABUS.BANDS) {
+    for (const [name, pattern] of band.terms) {
+      // A term found in the title counts at the title rate; the same term in
+      // the description counts once, at the lower one. Never both - a title
+      // word almost always reappears in the body.
+      if (pattern.test(title)) hits.push({ name, band: band.key, value: band.title });
+      else if (pattern.test(description)) hits.push({ name, band: band.key, value: band.text });
+    }
+  }
 
-  return Math.max(0, Math.min(100, score));
+  // "Claude Code" matches both `claude` and `claude code`, which is one
+  // signal, not two - counting both inflates the score and reads as a
+  // duplicate on the card. Where one matched name contains another, only the
+  // more specific survives.
+  const names = hits.map((hit) => hit.name);
+  const specific = hits.filter(
+    (hit) => !names.some((other) => other !== hit.name && other.includes(hit.name)),
+  );
+
+  specific.sort((a, b) => b.value - a.value);
+
+  const score = specific.reduce(
+    (total, hit, index) => total + hit.value * SYLLABUS.decayAt(index),
+    0,
+  );
+
+  return { hits: specific, score };
+}
+
+/**
+ * What a posting loses for asking for things the programme does not supply:
+ * seniority it cannot bridge, or specialist depth it never teaches.
+ *
+ * Capped, because the point is to move these down the board rather than to
+ * bury them. A Menler graduate reading about a Director of AI role is not
+ * harmed by seeing it on page four; they are harmed by not finding the
+ * automation role on page one.
+ */
+function syllabusPenalty(titleText, descriptionText) {
+  const title = toText(titleText);
+  const description = toText(descriptionText);
+
+  const reasons = [];
+  let penalty = 0;
+
+  for (const list of [SYLLABUS.SENIORITY, SYLLABUS.DEEP_SPECIALIST]) {
+    for (const [name, pattern] of list) {
+      if (pattern.test(title)) {
+        reasons.push(name);
+        penalty += SYLLABUS.TITLE_PENALTY;
+      } else if (pattern.test(description)) {
+        reasons.push(name);
+        penalty += SYLLABUS.TEXT_PENALTY;
+      }
+    }
+  }
+
+  return { reasons, penalty: Math.min(penalty, SYLLABUS.MAX_PENALTY) };
+}
+
+/**
+ * How well a job matches what Menler actually teaches, 0-100.
+ *
+ * Four things decide it, in descending order of weight:
+ *
+ *   1. named syllabus terms in the title   pipeline/syllabus.js, by band
+ *   2. the same terms in the description   worth roughly a third as much
+ *   3. the role's own category              a floor, not the answer
+ *   4. reachability                         entry-level up, senior down
+ *
+ * minus what the posting asks for that the programme does not supply.
+ *
+ * The earlier version of this scored "does the title say AI", which put
+ * Distinguished Engineer and VP roles above "Claude MCP / AI Automation
+ * Developer" and produced seven distinct scores across ten thousand jobs -
+ * so the sort was really seven buckets, ordered by date inside each. Counting
+ * evidence with decay both ranks on the right thing and spreads the scores
+ * far enough for the ordering to mean something.
+ */
+function scoreRelevance(titleText, descriptionText, roleCategory, { experienceLevel } = {}) {
+  return scoreRelevanceDetailed(titleText, descriptionText, roleCategory, { experienceLevel }).relevance;
+}
+
+/** The same scoring, with its workings - used by the pipeline and by tests. */
+function scoreRelevanceDetailed(titleText, descriptionText, roleCategory, { experienceLevel } = {}) {
+  const base = SYLLABUS.CATEGORY_BASE[roleCategory] ?? 0;
+  const { hits, score } = collectSyllabusEvidence(titleText, descriptionText);
+  const { reasons, penalty } = syllabusPenalty(titleText, descriptionText);
+  const reach = SYLLABUS.LEVEL_ADJUSTMENT[experienceLevel] ?? 0;
+
+  const relevance = Math.max(0, Math.min(100, Math.round(base + score + reach - penalty)));
+
+  return {
+    relevance,
+    // Deduped and capped: this is stored on every job, and six terms is
+    // already more than anyone reads off a card.
+    matchedSkills: [...new Set(hits.map((hit) => hit.name))].slice(0, 6),
+    penalisedFor: [...new Set(reasons)],
+  };
 }
 
 /** Scans the source's own type field and the title - never the description. */
@@ -951,6 +1007,13 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     isGig: FREELANCE_SOURCES.has(sourceName),
   });
 
+  // Seniority feeds the score, so it has to be known before scoring rather
+  // than assembled alongside it.
+  const experienceLevel = detectExperienceLevel(mapped.levelTitle, mapped.levelText);
+  const scored = scoreRelevanceDetailed(mapped.title, mapped.matchText, roleCategory, {
+    experienceLevel,
+  });
+
   return createJob({
     title: mapped.title,
     // Ashby job objects carry no company name - only the board does.
@@ -965,8 +1028,12 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     source: sourceName,
     roleCategory,
     workType: detectWorkType(mapped.typeText, toText(mapped.title), sourceName),
-    relevance: scoreRelevance(mapped.title, mapped.matchText, roleCategory),
-    experienceLevel: detectExperienceLevel(mapped.levelTitle, mapped.levelText),
+    relevance: scored.relevance,
+    // Stored because the description is not: without it, a later rescore
+    // could only ever see the title, and 99% of syllabus evidence lives in
+    // the body text.
+    matchedSkills: scored.matchedSkills,
+    experienceLevel,
     postedAt: mapped.postedAt,
     fetchedAt,
   });
@@ -1027,6 +1094,8 @@ module.exports = {
   normalizeJob,
   classifyRole,
   scoreRelevance,
+  scoreRelevanceDetailed,
+  collectSyllabusEvidence,
   detectWorkType,
   detectExperienceLevel,
   detectCountry,

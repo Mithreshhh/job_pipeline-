@@ -23,7 +23,7 @@ schema, and stores them so they can power the Skeo and Menler job boards.
 Defined in `pipeline/schema.js` — the shape every scraper normalizes into:
 
 `title, company, location, country, isRemote, url, source, roleCategory,
-workType, experienceLevel, postedAt, fetchedAt`
+workType, relevance, matchedSkills, experienceLevel, postedAt, fetchedAt`
 
 The stored record (`db/jobModel.js`) adds three more, which the database
 layer maintains rather than the scrapers:
@@ -48,6 +48,34 @@ Values are lowercase slugs and are never display labels — labels live in
 the same file and can be reworded without touching stored data. Anything
 reading this collection should use `normalizeWorkType()` to fold other
 spellings (`Full-time`, `FULLTIME`, `part_time`, `Gig`) onto these.
+
+## Ranking: against the Menler syllabus
+
+The board is sorted by `relevance` (most relevant first, newest breaking
+ties), scored once when a job is written.
+
+`pipeline/syllabus.js` holds the vocabulary it is scored against, and it is
+not a general AI word list — it is transcribed from the two real curricula in
+`menler-lms/server/scripts/curricula.js`, with every band citing the session
+or week it came from. Naming Claude, MCP or prompt engineering counts for
+most; then the role *shape* the programme produces (AI generalist, automation
+specialist, no-code, voice agent); then the tools it teaches (n8n, Zapier,
+Lovable, ElevenLabs, Midjourney, Perplexity); and well behind, the generic
+words — generative AI, LLM, machine learning — which are twenty times more
+common and used to be worth just as much.
+
+Two things subtract: seniority the programme does not bridge (VP, Director,
+Principal, "10+ years") and depth it never teaches (research scientist, PhD,
+MLOps, CUDA, model training). Both are capped, so those roles move down the
+board rather than off it.
+
+Each job stores `matchedSkills` — the terms it actually matched. Both LMS
+boards show them under the listing, and `scripts/backfillRelevance.js` reads
+them to rescore the backlog without the description, which is never stored.
+**Run that script after any change to `syllabus.js`**, or new jobs use the new
+rule while everything already stored keeps the old one.
+
+A search term switches ranking off: someone typing "video editor" means it.
 
 ## The board: a rolling ten-day window
 

@@ -27,17 +27,25 @@ from jobspy import scrape_jobs
 # way when either changes - a category with no keyword here is a category with
 # no Indian jobs in it.
 KEYWORDS = [
-    # AI-Tech
-    "machine learning engineer",
-    "AI engineer",
-    "data scientist",
-    "NLP engineer",
-    "deep learning engineer",
-    "generative AI",
-    "computer vision engineer",
-    "MLOps",
-    "AI researcher",
+    # The operator roles the syllabus actually trains for. These come first
+    # because they are the point of the board: pipeline/syllabus.js ranks a
+    # job on how well it matches the Menler curriculum, and no ranking can
+    # surface a listing that was never fetched. The searches used to spend
+    # five slots on MLOps, computer vision, deep learning, NLP and AI
+    # research - all things the programme explicitly does not teach, and all
+    # of which the scorer now pushes to the bottom of the board.
+    "AI automation",
+    "AI consultant",
+    "workflow automation",
+    "no code developer",
+    "AI agent developer",
+    "conversational AI",
     "prompt engineer",
+    # AI-Tech, the reachable end of it.
+    "AI engineer",
+    "machine learning engineer",
+    "generative AI",
+    "data scientist",
     # AI-NonTech: barely exists as a job title on general boards, but the
     # few that do post here are exactly the entry-level roles students want.
     "AI trainer",

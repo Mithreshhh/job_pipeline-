@@ -59,6 +59,13 @@ const jobSchema = new mongoose.Schema({
   // stored number is the difference between an index scan and a full one.
   relevance: { type: Number, default: 0 },
 
+  // The syllabus terms this posting actually evidenced - "claude", "n8n",
+  // "prompt engineering". Stored for two reasons: it is what makes a job's
+  // position on the board explainable to the student looking at it, and the
+  // description it was matched from is never stored, so without this a
+  // rescore could only ever see the title again.
+  matchedSkills: { type: [String], default: [] },
+
   postedAt: { type: Date, default: null },
   fetchedAt: { type: Date, default: null },
 

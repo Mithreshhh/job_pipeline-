@@ -16,6 +16,7 @@ const JOB_SCHEMA_FIELDS = [
   "roleCategory",
   "workType",
   "relevance",
+  "matchedSkills",
   "experienceLevel",
   "postedAt",
   "fetchedAt",

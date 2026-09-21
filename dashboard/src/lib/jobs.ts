@@ -31,6 +31,9 @@ export type Job = {
   source: string | null
   sources?: string[]
   roleCategory: string | null
+  /** The syllabus terms this listing matched, which is what `relevance` is scored from. */
+  matchedSkills?: string[]
+  relevance?: number
   workType: string
   experienceLevel: string
   postedAt: Date | null

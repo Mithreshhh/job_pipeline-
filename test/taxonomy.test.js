@@ -30,9 +30,12 @@ const {
 const {
   classifyRole,
   scoreRelevance,
+  scoreRelevanceDetailed,
   detectWorkType,
   detectExperienceLevel,
 } = require("../pipeline/normalize.js");
+
+const SYLLABUS = require("../pipeline/syllabus.js");
 
 test("every entry has a unique value and a label", () => {
   for (const entries of [ROLE_CATEGORIES, WORK_TYPES, EXPERIENCE_LEVELS]) {
@@ -161,51 +164,211 @@ test("every experience level is reachable, and all are in the taxonomy", () => {
   assert.deepEqual([...reached].sort(), [...EXPERIENCE_LEVEL_VALUES].sort());
 });
 
-test("relevance puts the roles these students train for first", () => {
-  // The board carries seven categories and a plain newest-first sort buried
-  // the AI roles: Business and Tech are two thirds of the feed.
-  const rank = (title, category, description = '') =>
-    scoreRelevance(title, description, category);
+/* ------------------------------------------------------------------ *
+ * Relevance: does the board rank by the Menler syllabus?
+ * ------------------------------------------------------------------ */
 
-  const claude = rank('AI Workflow Specialist – Claude Expert', 'AI-NonTech');
-  const llm = rank('Senior LLM Engineer', 'AI-Tech');
-  const ml = rank('Machine Learning Engineer', 'AI-Tech');
-  const generalist = rank('AI Generalist', 'AI-NonTech');
-  const automation = rank('Automation Specialist', 'Tech');
-  const backend = rank('Backend Engineer', 'Tech');
-  const editor = rank('Video Editor', 'Creative');
-  const ops = rank('Operations Manager', 'Business');
+const rank = (title, category, description = "", experienceLevel = "mid") =>
+  scoreRelevance(title, description, category, { experienceLevel });
 
-  // A named tool in the title beats the category alone.
-  assert.ok(claude > ml, 'a Claude role should outrank a generic ML one');
-  assert.ok(llm > ml);
-  assert.ok(generalist > automation);
-  assert.ok(automation > backend, 'the generalist shape lifts a plain Tech role');
-  assert.ok(backend > editor);
-  assert.ok(editor > ops);
+test("the syllabus outranks the acronym", () => {
+  // The failure this replaced: scoring on "does the title say AI" put
+  // Distinguished Engineer and VP roles on page one, while the Claude
+  // automation role - the single closest match on the whole board - sat at
+  // position 33. Both say AI. Only one is a job a graduate can do.
+  const claudeOperator = rank("Claude MCP / AI Automation Developer", "AI-Tech");
+  const distinguished = rank("VP - Distinguished Engineer of Generative AI", "AI-Tech", "", "senior");
+  const researchScientist = rank("AI Research Scientist", "AI-Tech", "PhD required, PyTorch", "senior");
 
-  // Everything stays inside the range the sort assumes.
-  for (const score of [claude, llm, ml, generalist, automation, backend, editor, ops]) {
-    assert.ok(score >= 0 && score <= 100, `${score} out of range`);
+  assert.ok(
+    claudeOperator > distinguished,
+    `Claude operator (${claudeOperator}) must outrank Distinguished Engineer (${distinguished})`,
+  );
+  assert.ok(claudeOperator > researchScientist);
+});
+
+test("named syllabus tools beat generic AI words", () => {
+  // "Generative AI" and "LLM" are roughly twenty times more common in titles
+  // than anything the programme actually teaches, so they cannot be worth
+  // the same.
+  assert.ok(rank("Claude Prompt Engineer", "AI-Tech") > rank("Generative AI Engineer", "AI-Tech"));
+  assert.ok(rank("n8n Automation Specialist", "Tech") > rank("LLM Engineer", "AI-Tech"));
+});
+
+test("the ordering follows the programme's own weeks", () => {
+  // One representative job per Fellowship week, each of which should clear a
+  // plain engineering role in the same category.
+  const backend = rank("Backend Engineer", "Tech");
+
+  const perWeek = {
+    "W2 Claude mastery": rank("Claude Workflow Consultant", "AI-NonTech"),
+    "W3 prompt + creative": rank("AI Prompt Designer", "AI-NonTech"),
+    "W4 voice + automation": rank("Voice AI Agent Developer", "AI-Tech"),
+    "W5 vibecoding": rank("No-Code AI Product Builder", "Tech"),
+  };
+
+  for (const [week, score] of Object.entries(perWeek)) {
+    assert.ok(score > backend, `${week} scored ${score}, not above a plain backend role (${backend})`);
   }
 });
 
-test("relevance trusts the title far more than the description", () => {
-  // Every company blurb mentions AI; what the employer called the job is the
-  // evidence that means something.
-  const inTitle = scoreRelevance('LLM Engineer', '', 'Tech');
-  const inBody = scoreRelevance('Backend Engineer', 'we use LLMs internally', 'Tech');
-  const neither = scoreRelevance('Backend Engineer', '', 'Tech');
+test("seniority and specialist depth push a job down, but only so far", () => {
+  const plain = rank("AI Engineer", "AI-Tech");
 
-  assert.ok(inTitle > inBody);
-  assert.ok(inBody > neither);
+  assert.ok(rank("Head of AI", "AI-NonTech", "", "senior") < plain);
+  assert.ok(rank("MLOps Engineer", "AI-Tech", "", "senior") < plain);
+  assert.ok(rank("Principal Engineer, AI", "AI-Tech", "", "senior") < plain);
+
+  // Capped: a posting that trips every warning still lands at zero rather
+  // than going negative and breaking the sort.
+  const worst = rank("VP, Distinguished Research Scientist", "AI-Tech", "PhD, CUDA, model pre-training", "senior");
+  assert.ok(worst >= 0 && worst <= 100, `${worst} out of range`);
 });
 
-test("relevance never depends on a literal control character", () => {
-  // The word-boundary escapes in these patterns were once written as real
-  // backspace bytes, so every pattern silently matched nothing and every job
-  // scored its category base. The scores above would all still have passed
-  // relative to each other, so this checks the absolute value.
-  assert.equal(scoreRelevance('Claude Prompt Engineer', '', 'AI-Tech'), 85);
-  assert.equal(scoreRelevance('Machine Learning Engineer', '', 'AI-Tech'), 60);
+test("Art Director is a creative job, not an executive one", () => {
+  // The bare word "director" is an org rank everywhere except the creative
+  // trades, and the syllabus teaches creative direction in Fellowship W3.
+  assert.ok(rank("Art Director", "Creative") > rank("Director of Sales", "Business"));
+  assert.ok(rank("Creative Director", "Creative") > rank("Managing Director", "Business"));
+});
+
+test("a title counts for far more than a description", () => {
+  // Almost every company blurb mentions AI somewhere; what the employer
+  // chose to call the job is the evidence that means something.
+  const inTitle = rank("Claude Automation Specialist", "Tech");
+  const inBody = rank("Operations Associate", "Tech", "our team uses Claude and n8n daily");
+  const neither = rank("Operations Associate", "Tech");
+
+  assert.ok(inTitle > inBody);
+  assert.ok(inBody > neither, "description evidence should still count for something");
+});
+
+test("entry-level roles beat identical senior ones", () => {
+  // A graduate is looking for a first AI-adjacent job, so reachability is
+  // part of what "relevant" means here.
+  const junior = rank("AI Automation Specialist", "Tech", "", "entry");
+  const senior = rank("AI Automation Specialist", "Tech", "", "senior");
+  assert.ok(junior > senior);
+});
+
+test("the score reports what it matched", () => {
+  // The stored matchedSkills are what makes a position on the board
+  // explainable, and what lets a rescore work without the description -
+  // which is never stored.
+  const { relevance, matchedSkills } = scoreRelevanceDetailed(
+    "AI Automation Specialist",
+    "you will build in n8n and Zapier alongside Claude",
+    "Tech",
+    { experienceLevel: "mid" },
+  );
+
+  assert.ok(relevance > 0);
+  assert.ok(matchedSkills.includes("claude"));
+  assert.ok(matchedSkills.includes("n8n"));
+  assert.ok(matchedSkills.includes("automation specialist"));
+  assert.ok(matchedSkills.length <= 6, "capped so a card stays readable");
+  assert.equal(new Set(matchedSkills).size, matchedSkills.length, "deduped");
+});
+
+test("every score lands inside the range the sort assumes", () => {
+  const samples = [
+    ["Claude MCP Automation Developer", "AI-Tech", "entry"],
+    ["VP, Distinguished Research Scientist", "AI-Tech", "senior"],
+    ["PDF to Word Re-Typing", "Writing", "unspecified"],
+    ["Operations Manager", "Business", "mid"],
+  ];
+
+  for (const [title, category, level] of samples) {
+    const score = rank(title, category, "", level);
+    assert.ok(Number.isInteger(score), `${title} scored ${score}, not an integer`);
+    assert.ok(score >= 0 && score <= 100, `${title} scored ${score}`);
+  }
+});
+
+test("no syllabus pattern depends on a literal control character", () => {
+  // The word-boundary escapes in the previous scoring list were once written
+  // as real backspace bytes - a template literal turned every \b into 0x08 -
+  // so every pattern silently matched nothing and every job scored its
+  // category base. Relative ordering still looked correct, which is why this
+  // checks the bytes rather than the results.
+  const source = require("node:fs").readFileSync(
+    require.resolve("../pipeline/syllabus.js"),
+    "utf8",
+  );
+
+  // eslint-disable-next-line no-control-regex
+  const control = source.match(/[\x00-\x08\x0b\x0c\x0e-\x1f]/);
+  assert.equal(control, null, `pipeline/syllabus.js contains control byte ${control && control[0].charCodeAt(0)}`);
+
+  const lists = [
+    SYLLABUS.CORE,
+    SYLLABUS.TOOLS,
+    SYLLABUS.SHAPE,
+    SYLLABUS.ADJACENT,
+    SYLLABUS.SENIORITY,
+    SYLLABUS.DEEP_SPECIALIST,
+  ];
+
+  for (const list of lists) {
+    for (const [name, pattern] of list) {
+      assert.ok(name && typeof name === "string", "every term needs a name to store");
+      // eslint-disable-next-line no-control-regex
+      assert.ok(!/[\x00-\x1f]/.test(pattern.source), `${name} has a control byte in its pattern`);
+    }
+  }
+
+  // And the absolute values, because an ordering-only check passed happily
+  // while every pattern was dead.
+  assert.equal(scoreRelevance("Claude Prompt Engineer", "", "AI-Tech", { experienceLevel: "mid" }), 78);
+  assert.equal(scoreRelevance("Software Engineer", "", "Tech", { experienceLevel: "mid" }), 14);
+});
+
+test("every term name is unique across the bands", () => {
+  // Names are stored on the job and shown to students; the same word landing
+  // in two bands would score twice and read like a duplicate.
+  const names = [...SYLLABUS.CORE, ...SYLLABUS.TOOLS, ...SYLLABUS.SHAPE, ...SYLLABUS.ADJACENT].map(
+    ([name]) => name,
+  );
+  assert.equal(new Set(names).size, names.length, "duplicate term name across bands");
+});
+
+test("every stored term name re-matches its own pattern", () => {
+  // scripts/backfillRelevance.js rescores from the title plus the stored
+  // matchedSkills, because the description is never kept. That only works if
+  // each stored name is itself matchable - "cursor" would not have matched
+  // /cursor\s*(ai|ide)/, so the term is stored as "cursor ai". Without this
+  // check a rename here silently makes old rows unrescorable.
+  for (const list of [SYLLABUS.CORE, SYLLABUS.TOOLS, SYLLABUS.SHAPE, SYLLABUS.ADJACENT]) {
+    for (const [name, pattern] of list) {
+      assert.ok(pattern.test(name), `"${name}" does not match its own pattern ${pattern}`);
+    }
+  }
+});
+
+test("a rescore from stored skills recovers the description's evidence", () => {
+  // The daily run sees the description; a later rescore does not. What it has
+  // instead is matchedSkills, and feeding those back in place of the
+  // description has to land on the same score.
+  const title = "Operations Associate";
+  const description = "you will work in n8n and Zapier with Claude in the loop";
+
+  const live = scoreRelevanceDetailed(title, description, "Tech", { experienceLevel: "mid" });
+  const rescored = scoreRelevanceDetailed(title, live.matchedSkills.join(" "), "Tech", {
+    experienceLevel: "mid",
+  });
+
+  assert.equal(rescored.relevance, live.relevance);
+  assert.deepEqual(rescored.matchedSkills, live.matchedSkills);
+});
+
+test("one signal is not counted twice under two names", () => {
+  // "Claude Code" matches both `claude` and `claude code`. That is one piece
+  // of evidence, and scoring it twice would put a job naming Claude Code
+  // above one naming Claude and something genuinely different.
+  const { matchedSkills } = scoreRelevanceDetailed("Claude Code Engineer", "", "AI-Tech", {
+    experienceLevel: "mid",
+  });
+
+  assert.ok(matchedSkills.includes("claude code"), "keeps the specific term");
+  assert.ok(!matchedSkills.includes("claude"), "drops the one contained in it");
 });

@@ -64,6 +64,18 @@ function Row({ job }: { job: Job }) {
         <Tag tone="mono">{job.source ?? 'unknown'}</Tag>
         {!job.isActive ? <Tag tone="mono">retired</Tag> : null}
       </div>
+
+      {/* Why this row sits where it does. The board ranks on how well a job
+          matches the Menler syllabus, and these are the terms it matched -
+          the quickest way to see whether the ranking is working. */}
+      {job.matchedSkills?.length ? (
+        <div className="col-span-full mt-1 font-mono text-[11px] text-ink-3">
+          {job.matchedSkills.join(' · ')}
+          {typeof job.relevance === 'number' ? (
+            <span className="ml-2 text-line-2">{job.relevance}</span>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   )
 }

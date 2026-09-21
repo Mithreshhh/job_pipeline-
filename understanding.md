@@ -582,35 +582,94 @@ A new section gets added every time a task is finished.
   have silently replaced the first, so "India" plus the window would have
   quietly returned the wrong set. Both now go under one `$and`.
 
-## Ranking: the roles these students actually want, first
+## Ranking: against the syllabus, not against the word "AI"
 
 - **Newest-first was burying the point of the board.** Business and Tech are
   two thirds of the feed, so page one was sales and ops while the AI roles
-  sat pages deep. Sorting is now `relevance` first, `postedAt` breaking ties.
-- **Scored once at write time, not at read time.** It never changes for a
-  stored job, and a stored number is the difference between an index scan
-  and a full one on every page load.
-- **Three inputs, in order of how much they are trusted**: the category the
-  classifier already decided; the *title*, which is what the employer chose
-  to call the job; and the description, which is worth almost nothing
-  because every company blurb mentions AI. A tool named in the title is
-  worth +25, the same word in the body +8.
-- **Two vocabularies feed it.** Named tools and techniques (claude, LLM,
-  generative AI, prompt, RAG, agentic, copilot, LangChain, fine-tuning), and
-  the "generalist shape" — AI consultant/strategist, automation or workflow
-  specialist, no-code, forward-deployed — which is what these courses train
-  people to be, and which turns up under a dozen different titles.
-- **A search term switches it off.** Someone typing "video editor" means it,
-  and ranking AI roles above their own query would be the board arguing with
-  them.
-- **The result**: the board now opens on *AI Workflow Specialist – Claude
-  Expert* (95), then LLM Engineer, AI Agent Developer, Generative AI Analyst
-  (85 each). The freelance noise that used to lead — "PDF to Word
-  Re-Typing" — scores 10 and sinks without being filtered out.
-- **`scripts/backfillRelevance.js`** scores the backlog, and is what you run
-  after changing the scoring — otherwise new jobs use the new rule and the
-  13,333 already stored keep the old one, and the board is sorted by two
-  rules at once.
+  sat pages deep. Sorting is `relevance` first, `postedAt` breaking ties.
+- **The first attempt ranked the acronym, and it showed.** Scoring on
+  "does the title say AI" put *VP – Distinguished Engineer of Generative AI*
+  at position 12 and *Senior Director of Engineering, AI Agents* at 11, while
+  *Claude MCP / AI Automation Developer — Small Business Operations* — the
+  single closest match on the whole board — sat at 33. Every one of those
+  says AI. Only one is a job a graduate can actually do.
+- **It also barely sorted.** 9,950 listings held 13 distinct scores, 66 of
+  them tied at 85 and 4,390 tied at 10. The "ranking" was seven buckets,
+  ordered by date inside each.
+
+### What replaced it
+
+- **`pipeline/syllabus.js` is the vocabulary, transcribed from the
+  curriculum.** Not a general AI word list — the two real curricula in
+  `menler-lms/server/scripts/curricula.js`, the AI Kickstarter (4 sessions)
+  and the Claude-First AI Generalist Fellowship (6 weeks). Every band cites
+  the session or week it came from, so "why is this job ranked here" is
+  answerable from the syllabus rather than from a regex tuned by feel.
+- **Four bands, by how directly they match what is taught**: the Claude
+  spine (claude, Claude Code, MCP, prompt engineering, AI agents) is worth
+  most; then the role *shape* the programme produces (AI generalist,
+  automation specialist, no-code, voice agent, vibecoding); then the named
+  tools it puts in students' hands (n8n, Zapier, Lovable, Replit,
+  ElevenLabs, VAPI, Midjourney, Runway, Perplexity, NotebookLM); and last,
+  well behind, the adjacent words (generative AI, LLM, machine learning).
+- **The adjacent band is the correction.** Those words used to be worth as
+  much as naming Claude, and they are roughly twenty times more common.
+- **Two things subtract.** Seniority the programme does not bridge (VP,
+  Director, Head of, Principal/Distinguished/Staff, "10+ years") and depth it
+  never teaches (research scientist, PhD, MLOps, CUDA, model training,
+  computer vision). Capped, because the point is to move these down the
+  board, not to bury them.
+- **"Director" is exempt in the creative trades.** Art Director and Creative
+  Director are ordinary career titles, and Fellowship W3 teaches creative
+  direction — penalising them would have been exactly backwards.
+- **Reachability counts.** An entry-level opening is worth more to a
+  graduate than a senior one with identical wording, so `experienceLevel`
+  adjusts the score.
+- **Evidence decays.** The first match counts full, the second 60%, the
+  third 35%. A description listing twenty tools cannot outscore a title that
+  names one.
+
+### What it produces
+
+- **The top of the board is now the syllabus.** Measured on 10,647 live
+  listings after a full run: Claude MCP / AI Automation Developer (86), AI
+  Workflow Specialist – Claude Expert (76), AI agent engineer (75), AI
+  Transformation & Enablement Specialist (73), AI Forward Deployed Engineer
+  (71), No-Code & AI Specialist (70), Conversational AI Operations Specialist
+  (70). The exec and research roles that used to lead are at the bottom.
+- **76 distinct scores instead of 13**, so the order at the top means
+  something rather than being date within a bucket.
+- **The India board is the clearest win**, because it was the thinnest: it
+  now opens on *AI Workflow Specialist – Claude Expert*, then an **AI/ML
+  Intern** matching claude, mcp, ai agents, chatgpt, gemini and hugging face,
+  then *Agentic AI Trainer* matching claude, prompt engineering, n8n and
+  zapier. None of those would have surfaced on a title-only score.
+- **1,404 of 10,647 listings carry syllabus evidence.** The rest score on
+  category alone, which is the honest shape of any job board — most jobs
+  have nothing to do with what you teach.
+- **A search term still switches ranking off.** Someone typing "video
+  editor" means it, and ranking AI roles above their own query would be the
+  board arguing with them.
+
+### `matchedSkills`, and why it is stored
+
+- **Each job stores the syllabus terms it matched** — `["claude", "n8n",
+  "prompt engineering"]`. Where one matched name contains another the more
+  specific wins, so "Claude Code" counts once rather than scoring as both
+  `claude` and `claude code`. Skeo and the dashboard show them under the listing
+  ("Matches what you're learning: …"), which is the difference between an
+  order a student trusts and one that looks arbitrary.
+- **It is also what makes a rescore possible.** Descriptions are never
+  stored, and 99% of syllabus evidence lives in the body text, so without
+  this a later rescore could only ever see the title again. Every term name
+  re-matches its own pattern — which is why the stored term is `"cursor ai"`
+  and not `"cursor"` — so feeding the stored terms back in place of the
+  description reproduces the live score exactly. A test pins that.
+- **`scripts/backfillRelevance.js`** rescores the backlog, and is what you
+  run after changing `syllabus.js` — otherwise new jobs use the new rule and
+  everything already stored keeps the old one, and the board is sorted by two
+  rules at once. Rows written before `matchedSkills` existed score from the
+  title alone until the next daily run refreshes them.
 
 ## A bug that scored nothing, and how it hid
 
