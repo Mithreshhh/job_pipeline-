@@ -134,8 +134,19 @@ test("search becomes a text query and takes over the sort", () => {
     score: { $meta: "textScore" },
     postedAt: -1,
   });
-  assert.deepEqual(buildJobSort({}), { postedAt: -1 });
-  assert.deepEqual(buildJobSort({ search: "   " }), { postedAt: -1 });
+  // Without a search term the board leads on relevance, so the AI roles
+  // these students train for aren't buried under Business and Tech.
+  assert.deepEqual(buildJobSort({}), { relevance: -1, postedAt: -1 });
+  assert.deepEqual(buildJobSort({ search: "   " }), { relevance: -1, postedAt: -1 });
+});
+
+test("a search term overrides the relevance ranking", () => {
+  // The reader has said what they want. Ranking AI roles above their own
+  // query would be the board arguing with them.
+  const sort = buildJobSort({ search: "video editor" });
+
+  assert.ok(!("relevance" in sort));
+  assert.deepEqual(sort, { score: { $meta: "textScore" }, postedAt: -1 });
 });
 
 test("pagination clamps so nobody can ask for all 9,800 rows", () => {

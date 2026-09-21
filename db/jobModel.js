@@ -53,6 +53,12 @@ const jobSchema = new mongoose.Schema({
     enum: EXPERIENCE_LEVEL_VALUES,
   },
 
+  // How well the job matches what these students train for, 0-100.
+  // Scored once at normalize time (pipeline/normalize.js) rather than at
+  // read time, because it never changes for a stored job and sorting by a
+  // stored number is the difference between an index scan and a full one.
+  relevance: { type: Number, default: 0 },
+
   postedAt: { type: Date, default: null },
   fetchedAt: { type: Date, default: null },
 
@@ -76,6 +82,8 @@ jobSchema.index({ url: 1 }, { unique: true });
 // first. isActive leads every one of them because it is the filter that is
 // never absent; putting the varying facet second lets one index serve both
 // "this category, newest first" and "everything, newest first".
+// The board's default order: most relevant first, newest breaking ties.
+jobSchema.index({ isActive: 1, relevance: -1, postedAt: -1 });
 jobSchema.index({ isActive: 1, postedAt: -1 });
 jobSchema.index({ isActive: 1, roleCategory: 1, postedAt: -1 });
 jobSchema.index({ isActive: 1, country: 1, postedAt: -1 });

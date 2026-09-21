@@ -581,3 +581,73 @@ A new section gets added every time a task is finished.
   to `filter.$or`, and the window is itself an `$or` — the second would
   have silently replaced the first, so "India" plus the window would have
   quietly returned the wrong set. Both now go under one `$and`.
+
+## Ranking: the roles these students actually want, first
+
+- **Newest-first was burying the point of the board.** Business and Tech are
+  two thirds of the feed, so page one was sales and ops while the AI roles
+  sat pages deep. Sorting is now `relevance` first, `postedAt` breaking ties.
+- **Scored once at write time, not at read time.** It never changes for a
+  stored job, and a stored number is the difference between an index scan
+  and a full one on every page load.
+- **Three inputs, in order of how much they are trusted**: the category the
+  classifier already decided; the *title*, which is what the employer chose
+  to call the job; and the description, which is worth almost nothing
+  because every company blurb mentions AI. A tool named in the title is
+  worth +25, the same word in the body +8.
+- **Two vocabularies feed it.** Named tools and techniques (claude, LLM,
+  generative AI, prompt, RAG, agentic, copilot, LangChain, fine-tuning), and
+  the "generalist shape" — AI consultant/strategist, automation or workflow
+  specialist, no-code, forward-deployed — which is what these courses train
+  people to be, and which turns up under a dozen different titles.
+- **A search term switches it off.** Someone typing "video editor" means it,
+  and ranking AI roles above their own query would be the board arguing with
+  them.
+- **The result**: the board now opens on *AI Workflow Specialist – Claude
+  Expert* (95), then LLM Engineer, AI Agent Developer, Generative AI Analyst
+  (85 each). The freelance noise that used to lead — "PDF to Word
+  Re-Typing" — scores 10 and sinks without being filtered out.
+- **`scripts/backfillRelevance.js`** scores the backlog, and is what you run
+  after changing the scoring — otherwise new jobs use the new rule and the
+  13,333 already stored keep the old one, and the board is sorted by two
+  rules at once.
+
+## A bug that scored nothing, and how it hid
+
+- **The word-boundary escapes were literal backspace bytes.** A patch script
+  wrote `\b` through a JavaScript template literal, where it means the
+  backspace control character, not the regex escape. Every pattern compiled
+  fine, matched nothing, and every job scored exactly its category base.
+- **It looked like it worked.** The relative order was still right — AI-Tech
+  above Business — so a test comparing scores to each other would have
+  passed. What exposed it was printing an absolute number and noticing
+  "Claude Prompt Engineer" scored 60 when the rule says 85.
+- **The same corruption had already shipped.** The Lever mapper's
+  `/\bremote\b/i` had been written by the same kind of patch, so for every
+  Lever job the remote check silently never fired — it had been relying on
+  `workplaceType` alone since the day it was added.
+- **Two things came out of it**: the patch scripts now assert that no
+  control characters exist in the file before writing, and the tests assert
+  an absolute score, not just an ordering.
+
+## AmbitionBox, and what the other requested sources turned out to be
+
+Checked all six by hand rather than assuming:
+
+- **AmbitionBox** — open, and now a source. No API, but the jobs page is
+  server-rendered by Next.js, so the data is already in the page as JSON.
+  Worth being honest about the size: **~20 jobs a run**. Only the bare
+  `/jobs` URL returns anything; `?page=2`, `?keyword=`, and every category
+  path answer 200 with an empty 20KB shell. It matters anyway because its
+  `portal` field usually says "naukri" — it is Naukri's listings reached
+  without Naukri's wall, and India is where the board is thinnest.
+- **Naukri** — re-checked today with the documented `appid`/`systemid`
+  headers: still `406 {"message":"recaptcha required"}`. Unchanged.
+- **Fiverr** — `403`. **Upwork** — `403` behind a bot wall; its job RSS was
+  retired years ago.
+- **pmjobsdaily.netlify.app** — reads a Supabase project whose anon key is
+  in the page, but the `jobs` table answers `200 []` to an anonymous caller:
+  it is access-controlled, and getting at it would mean using someone's
+  account. Its own `daily_job_counts` table puts it at ~110 jobs a day, and
+  it is product-management only.
+- **Mercor** — already ingested, 127 rows, via its Ashby board.

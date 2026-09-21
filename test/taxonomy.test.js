@@ -29,6 +29,7 @@ const {
 
 const {
   classifyRole,
+  scoreRelevance,
   detectWorkType,
   detectExperienceLevel,
 } = require("../pipeline/normalize.js");
@@ -158,4 +159,53 @@ test("every experience level is reachable, and all are in the taxonomy", () => {
   }
 
   assert.deepEqual([...reached].sort(), [...EXPERIENCE_LEVEL_VALUES].sort());
+});
+
+test("relevance puts the roles these students train for first", () => {
+  // The board carries seven categories and a plain newest-first sort buried
+  // the AI roles: Business and Tech are two thirds of the feed.
+  const rank = (title, category, description = '') =>
+    scoreRelevance(title, description, category);
+
+  const claude = rank('AI Workflow Specialist – Claude Expert', 'AI-NonTech');
+  const llm = rank('Senior LLM Engineer', 'AI-Tech');
+  const ml = rank('Machine Learning Engineer', 'AI-Tech');
+  const generalist = rank('AI Generalist', 'AI-NonTech');
+  const automation = rank('Automation Specialist', 'Tech');
+  const backend = rank('Backend Engineer', 'Tech');
+  const editor = rank('Video Editor', 'Creative');
+  const ops = rank('Operations Manager', 'Business');
+
+  // A named tool in the title beats the category alone.
+  assert.ok(claude > ml, 'a Claude role should outrank a generic ML one');
+  assert.ok(llm > ml);
+  assert.ok(generalist > automation);
+  assert.ok(automation > backend, 'the generalist shape lifts a plain Tech role');
+  assert.ok(backend > editor);
+  assert.ok(editor > ops);
+
+  // Everything stays inside the range the sort assumes.
+  for (const score of [claude, llm, ml, generalist, automation, backend, editor, ops]) {
+    assert.ok(score >= 0 && score <= 100, `${score} out of range`);
+  }
+});
+
+test("relevance trusts the title far more than the description", () => {
+  // Every company blurb mentions AI; what the employer called the job is the
+  // evidence that means something.
+  const inTitle = scoreRelevance('LLM Engineer', '', 'Tech');
+  const inBody = scoreRelevance('Backend Engineer', 'we use LLMs internally', 'Tech');
+  const neither = scoreRelevance('Backend Engineer', '', 'Tech');
+
+  assert.ok(inTitle > inBody);
+  assert.ok(inBody > neither);
+});
+
+test("relevance never depends on a literal control character", () => {
+  // The word-boundary escapes in these patterns were once written as real
+  // backspace bytes, so every pattern silently matched nothing and every job
+  // scored its category base. The scores above would all still have passed
+  // relative to each other, so this checks the absolute value.
+  assert.equal(scoreRelevance('Claude Prompt Engineer', '', 'AI-Tech'), 85);
+  assert.equal(scoreRelevance('Machine Learning Engineer', '', 'AI-Tech'), 60);
 });

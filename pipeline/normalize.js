@@ -534,6 +534,95 @@ function classifyRole(titleText, descriptionText = "", { isGig = false } = {}) {
   return null;
 }
 
+/* ------------------------------------------------------------------ *
+ * Relevance
+ *
+ * The board carries seven categories, and a plain newest-first sort buries
+ * the roles these students are training for: on a live run, Business and
+ * Tech were 4,100 of 6,500 listings, so page one was sales and ops while
+ * the AI roles sat pages deep.
+ *
+ * Every job therefore gets a score, computed once when it is stored, and
+ * the board sorts by it before date. Three things feed it, in order of how
+ * much they are trusted:
+ *
+ *   category      what the classifier already decided the job is
+ *   title         the strongest evidence, and the hardest to fake
+ *   description   the weakest - every company's boilerplate mentions AI
+ * ------------------------------------------------------------------ */
+
+/** What the classifier already concluded, as a starting point. */
+const CATEGORY_BASE = {
+  "AI-Tech": 60,
+  "AI-NonTech": 55,
+  Tech: 30,
+  Creative: 20,
+  Marketing: 20,
+  Writing: 20,
+  Business: 10,
+};
+
+/**
+ * Named tools and techniques. A title carrying one of these is describing
+ * work with current AI systems, whatever the job is called - which is the
+ * thing these courses actually teach.
+ */
+const AI_TOOL_PATTERNS = [
+  /\bclaude\b/i,
+  /\b(chat\s?gpt|gpt-?\d)\b/i,
+  /\bllms?\b/i,
+  /\bgen(erative)?\s?ai\b/i,
+  /\bprompt(ing|s)?\b/i,
+  /\brag\b/i,
+  /\bagentic\b/i,
+  /\bai\s+agents?\b/i,
+  /\bcopilot\b/i,
+  /\blangchain\b/i,
+  /\bhugging\s?face\b/i,
+  /\bfine[\s-]?tun(e|ing)\b/i,
+  /\bdiffusion\b/i,
+  /\bmidjourney\b/i,
+];
+
+/**
+ * The generalist shape: someone who applies AI across a business rather
+ * than building models. It is what "AI generalist" means as a job, and it
+ * turns up under a dozen different titles.
+ */
+const GENERALIST_PATTERNS = [
+  /\bai\s+(generalist|consultant|specialist|strategist|lead)\b/i,
+  /\b(automation|workflow)\s+(specialist|engineer|consultant|manager)\b/i,
+  /\bno[\s-]?code\b/i,
+  /\bai\s+(ops|operations|product|program)\b/i,
+  /\bsolutions?\s+(architect|engineer),?\s+ai\b/i,
+  /\bforward[\s-]deployed\b/i,
+];
+
+/**
+ * How well a job matches what these students are being trained for, 0-100.
+ *
+ * Kept deliberately simple and readable rather than tuned: it decides the
+ * order of a list, not whether a job is shown at all, so being roughly
+ * right in the right direction is worth more than precision nobody can
+ * explain when they ask why a listing is where it is.
+ */
+function scoreRelevance(titleText, descriptionText, roleCategory) {
+  let score = CATEGORY_BASE[roleCategory] ?? 0;
+
+  const title = toText(titleText);
+  const description = toText(descriptionText);
+
+  // The title is trusted most, because it is what the employer chose to
+  // call the job. A description mentioning AI is worth far less - almost
+  // every company blurb does.
+  if (matchesAny(title, AI_TOOL_PATTERNS)) score += 25;
+  else if (matchesAny(description, AI_TOOL_PATTERNS)) score += 8;
+
+  if (matchesAny(title, GENERALIST_PATTERNS)) score += 15;
+
+  return Math.max(0, Math.min(100, score));
+}
+
 /** Scans the source's own type field and the title - never the description. */
 function detectWorkType(typeText, titleText, source) {
   if (FREELANCE_SOURCES.has(source)) return "freelance";
@@ -753,6 +842,38 @@ const MAPPERS = {
    * Like Ashby, a Lever job carries no company name - only the board does -
    * so normalizeJob falls back to the board token.
    */
+  /**
+   * AmbitionBox. Indian listings, mostly re-published from Naukri, read out
+   * of the page's server-rendered JSON. Its experience range (minExp/maxExp)
+   * is handed to the level detector as "2-7 Yrs", which the year-range
+   * parser already understands - so seniority comes from a real number here
+   * rather than from guessing at the title.
+   */
+  ambitionbox(raw) {
+    const locations = Array.isArray(raw.locations) ? raw.locations : [];
+    const location = locations.join(", ") || null;
+    const skills = Array.isArray(raw.skills) ? raw.skills.join(", ") : "";
+
+    const years =
+      Number.isFinite(raw.minExp) && Number.isFinite(raw.maxExp)
+        ? `${raw.minExp}-${raw.maxExp} Yrs`
+        : "";
+
+    return {
+      title: raw.title || null,
+      company: raw.company || raw.shortName || null,
+      location,
+      defaultCountry: "India",
+      isRemote: /\bremote\b/i.test(toText(location, raw.title, raw.workMode)),
+      // jdpUrl is a path, not a URL.
+      url: raw.jdpUrl ? `https://www.ambitionbox.com${raw.jdpUrl}` : null,
+      postedAt: toIsoDate(raw.postedAtIso),
+      matchText: toText(raw.title, raw.jobProfile, skills),
+      typeText: "",
+      levelTitle: toText(raw.title),
+      levelText: years,
+    };
+  },
   lever(raw) {
     const categories = raw.categories || {};
     const location = categories.location || null;
@@ -764,7 +885,7 @@ const MAPPERS = {
       location,
       isRemote:
         raw.workplaceType === "remote" ||
-        /remote/i.test(toText(location, raw.text)),
+        /\bremote\b/i.test(toText(location, raw.text)),
       url: raw.hostedUrl || raw.applyUrl || null,
       // Epoch milliseconds; toIsoDate already tells ms from seconds.
       postedAt: toIsoDate(raw.createdAt),
@@ -807,13 +928,14 @@ const SOURCE_ALIASES = {
   greenhouse: "greenhouse",
   ashby: "ashby",
   lever: "lever",
+  ambitionbox: "ambitionbox",
   weworkremotely: "weworkremotely",
 };
 
 // Matched against the wrapper's own source string, not the mapper alias:
 // india.py writes "jobspy", jobspy_global.py writes "jobspy-indeed" /
 // "jobspy-linkedin", and all three share the same mapper.
-const INDIA_SOURCES = new Set(["jobspy"]);
+const INDIA_SOURCES = new Set(["jobspy", "ambitionbox"]);
 
 function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany }) {
   const mapperName = SOURCE_ALIASES[source];
@@ -821,6 +943,13 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
 
   const mapped = MAPPERS[mapperName](rawJob);
   const sourceName = mapped.sourceName || source;
+
+  // Classified once and reused: relevance is scored partly from the category,
+  // and running the classifier twice per job costs a second pass over every
+  // keyword list for an answer we already have.
+  const roleCategory = classifyRole(toText(mapped.title), mapped.matchText, {
+    isGig: FREELANCE_SOURCES.has(sourceName),
+  });
 
   return createJob({
     title: mapped.title,
@@ -834,10 +963,9 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     isRemote: mapped.isRemote,
     url: mapped.url,
     source: sourceName,
-    roleCategory: classifyRole(toText(mapped.title), mapped.matchText, {
-      isGig: FREELANCE_SOURCES.has(sourceName),
-    }),
+    roleCategory,
     workType: detectWorkType(mapped.typeText, toText(mapped.title), sourceName),
+    relevance: scoreRelevance(mapped.title, mapped.matchText, roleCategory),
     experienceLevel: detectExperienceLevel(mapped.levelTitle, mapped.levelText),
     postedAt: mapped.postedAt,
     fetchedAt,
@@ -898,6 +1026,7 @@ module.exports = {
   normalizeEntry,
   normalizeJob,
   classifyRole,
+  scoreRelevance,
   detectWorkType,
   detectExperienceLevel,
   detectCountry,

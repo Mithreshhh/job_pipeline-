@@ -16,6 +16,7 @@ const international = require("../scrapers/international.js");
 const { searchFreelancerBulk } = require("../scrapers/freelance.js");
 const { fetchAiCompanyBoards } = require("../scrapers/aiCompanies.js");
 const { fetchWeWorkRemotely } = require("../scrapers/weworkremotely.js");
+const { fetchAmbitionBox } = require("../scrapers/ambitionbox.js");
 const { normalizeRaw } = require("../pipeline/normalize.js");
 const { dedupeJobs } = require("../pipeline/dedupe.js");
 const { upsertJobs } = require("../db/upsertJobs.js");
@@ -135,7 +136,13 @@ const SOURCES = [
     run: () => searchFreelancerBulk(FREELANCE_KEYWORDS),
   },
   {
-    name: "ai company boards (greenhouse + ashby)",
+    // India, via a Next.js page's own SSR payload. ~20 jobs a run - small,
+    // but it is Naukri's listings reached without Naukri's reCAPTCHA wall.
+    name: "ambitionbox (India)",
+    run: () => fetchAmbitionBox(),
+  },
+  {
+    name: "ai company boards (greenhouse + lever + ashby)",
     run: () => fetchAiCompanyBoards(),
   },
 ];

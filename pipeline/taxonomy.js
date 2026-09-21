@@ -100,6 +100,7 @@ const EXPERIENCE_LEVELS = [
 const SOURCES = [
   { value: "linkedin", label: "LinkedIn" },
   { value: "indeed", label: "Indeed" },
+  { value: "ambitionbox", label: "AmbitionBox" },
   { value: "remoteok", label: "RemoteOK" },
   { value: "arbeitnow", label: "Arbeitnow" },
   { value: "jobicy", label: "Jobicy" },

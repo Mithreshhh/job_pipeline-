@@ -160,16 +160,24 @@ function buildJobQuery(params = {}) {
 }
 
 /**
- * Newest first, always. When there's a search term, relevance leads and
- * the date breaks ties - a student searching "prompt engineer" wants the
- * prompt engineering roles, not whatever was posted most recently.
+ * Most relevant first, newest breaking ties.
+ *
+ * Plain newest-first buried the roles these students are training for: on a
+ * live run Business and Tech were 4,100 of 6,500 listings, so page one was
+ * sales and ops while the AI roles sat pages deep. `relevance` is scored
+ * once when a job is stored (pipeline/normalize.js) precisely so this sort
+ * costs nothing at read time.
+ *
+ * A search term overrides it, because then the reader has said what they
+ * want: someone typing "video editor" means it, and ranking AI roles above
+ * their own query would be the board arguing with them.
  */
 function buildJobSort(params = {}) {
   const hasSearch = Boolean(cleanString(params.search));
 
   return hasSearch
     ? { score: { $meta: "textScore" }, postedAt: -1 }
-    : { postedAt: -1 };
+    : { relevance: -1, postedAt: -1 };
 }
 
 /** Clamped so a caller can't ask for all 9,800 rows in one response. */

@@ -175,11 +175,13 @@ export async function listJobs(query: JobQuery) {
   const skip = (page - 1) * DEFAULT_LIMIT
   const col = await jobs()
 
-  // Relevance leads when there's a search term — someone searching "prompt
-  // engineer" wants prompt engineering roles, not whatever is newest.
+  // Most relevant first, newest breaking ties — `relevance` is scored once
+  // by the pipeline when a job is stored. A search term overrides it: the
+  // reader has said what they want, and ranking AI roles above their own
+  // query would be the board arguing with them.
   const sort: Record<string, unknown> = query.q
     ? { score: { $meta: 'textScore' }, postedAt: -1 }
-    : { postedAt: -1 }
+    : { relevance: -1, postedAt: -1 }
 
   const cursor = query.q
     ? col.find(filter, { projection: { score: { $meta: 'textScore' } } })
