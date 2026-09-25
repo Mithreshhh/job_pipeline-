@@ -66,6 +66,25 @@ const jobSchema = new mongoose.Schema({
   // rescore could only ever see the title again.
   matchedSkills: { type: [String], default: [] },
 
+  // The three reachability scores, and the combined number the board sorts
+  // on. All 0-100, all written by pipeline/ranking.js at normalize time for
+  // the same reason relevance is: a stored number turns the board's default
+  // sort into an index scan instead of a full one.
+  //
+  //   achievability  experience level, title seniority, years demanded
+  //   indiaFit       India-based, or remote that really hires from India
+  //   easeOfApply    direct link, no take-home, no degree gate
+  //   rankScore      the weighted combination, RANK_WEIGHTS in ranking.js
+  achievability: { type: Number, default: 0 },
+  indiaFit: { type: Number, default: 0 },
+  easeOfApply: { type: Number, default: 0 },
+  rankScore: { type: Number, default: 0 },
+
+  // Short phrases explaining the position: ["entry level", "Bengaluru",
+  // "direct apply", "matches claude"]. Shown on the card, because an order
+  // nobody can account for is one nobody trusts.
+  rankReasons: { type: [String], default: [] },
+
   postedAt: { type: Date, default: null },
   fetchedAt: { type: Date, default: null },
 
@@ -89,7 +108,9 @@ jobSchema.index({ url: 1 }, { unique: true });
 // first. isActive leads every one of them because it is the filter that is
 // never absent; putting the varying facet second lets one index serve both
 // "this category, newest first" and "everything, newest first".
-// The board's default order: most relevant first, newest breaking ties.
+// The board's default order: best overall match first, newest breaking ties.
+jobSchema.index({ isActive: 1, rankScore: -1, postedAt: -1 });
+// Kept because the dashboard still offers a sort by syllabus relevance alone.
 jobSchema.index({ isActive: 1, relevance: -1, postedAt: -1 });
 jobSchema.index({ isActive: 1, postedAt: -1 });
 jobSchema.index({ isActive: 1, roleCategory: 1, postedAt: -1 });

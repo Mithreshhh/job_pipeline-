@@ -17,6 +17,7 @@ const { searchFreelancerBulk } = require("../scrapers/freelance.js");
 const { fetchAiCompanyBoards } = require("../scrapers/aiCompanies.js");
 const { fetchWeWorkRemotely } = require("../scrapers/weworkremotely.js");
 const { fetchAmbitionBox } = require("../scrapers/ambitionbox.js");
+const { fetchInstahyre } = require("../scrapers/instahyre.js");
 const { normalizeRaw } = require("../pipeline/normalize.js");
 const { dedupeJobs } = require("../pipeline/dedupe.js");
 const { upsertJobs } = require("../db/upsertJobs.js");
@@ -140,6 +141,10 @@ const SOURCES = [
     // but it is Naukri's listings reached without Naukri's reCAPTCHA wall.
     name: "ambitionbox (India)",
     run: () => fetchAmbitionBox(),
+  },
+  {
+    name: "instahyre (India)",
+    run: () => fetchInstahyre(),
   },
   {
     name: "ai company boards (greenhouse + lever + ashby)",

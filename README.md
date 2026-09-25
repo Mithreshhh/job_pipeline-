@@ -23,7 +23,8 @@ schema, and stores them so they can power the Skeo and Menler job boards.
 Defined in `pipeline/schema.js` — the shape every scraper normalizes into:
 
 `title, company, location, country, isRemote, url, source, roleCategory,
-workType, relevance, matchedSkills, experienceLevel, postedAt, fetchedAt`
+workType, relevance, matchedSkills, achievability, indiaFit, easeOfApply,
+rankScore, rankReasons, experienceLevel, postedAt, fetchedAt`
 
 The stored record (`db/jobModel.js`) adds three more, which the database
 layer maintains rather than the scrapers:
@@ -49,33 +50,68 @@ the same file and can be reworded without touching stored data. Anything
 reading this collection should use `normalizeWorkType()` to fold other
 spellings (`Full-time`, `FULLTIME`, `part_time`, `Gig`) onto these.
 
-## Ranking: against the Menler syllabus
+## Ranking: what a student can actually get, first
 
-The board is sorted by `relevance` (most relevant first, newest breaking
-ties), scored once when a job is written.
+The board sorts by `rankScore` descending, newest breaking ties. It combines
+four scores, all 0-100, all written at normalize time and all rule-based. The
+weights live in one object, `RANK_WEIGHTS` in `pipeline/ranking.js`:
 
-`pipeline/syllabus.js` holds the vocabulary it is scored against, and it is
-not a general AI word list — it is transcribed from the two real curricula in
-`menler-lms/server/scripts/curricula.js`, with every band citing the session
-or week it came from. Naming Claude, MCP or prompt engineering counts for
-most; then the role *shape* the programme produces (AI generalist, automation
-specialist, no-code, voice agent); then the tools it teaches (n8n, Zapier,
-Lovable, ElevenLabs, Midjourney, Perplexity); and well behind, the generic
-words — generative AI, LLM, machine learning — which are twenty times more
-common and used to be worth just as much.
+| Axis | Weight | What it reads |
+| --- | --- | --- |
+| `achievability` | 0.40 | Experience level, seniority in the title, years the description demands |
+| `indiaFit` | 0.30 | India-based, or remote that genuinely hires from India; visa and clearance gates |
+| `easeOfApply` | 0.18 | Direct apply link, take-home, multi-round process, degree gate |
+| `relevance` | 0.12 | Match against the Menler syllabus (see below) |
 
-Two things subtract: seniority the programme does not bridge (VP, Director,
-Principal, "10+ years") and depth it never teaches (research scientist, PhD,
-MLOps, CUDA, model training). Both are capped, so those roles move down the
-board rather than off it.
+Sorting on syllabus relevance alone answered the wrong question. It put a
+Staff Engineer role in San Francisco wanting ten years and a US work visa
+above an AI automation internship in Pune. Both match the curriculum. Only one
+is a job a student finishing a six-week programme can take.
 
-Each job stores `matchedSkills` — the terms it actually matched. Both LMS
-boards show them under the listing, and `scripts/backfillRelevance.js` reads
-them to rescore the backlog without the description, which is never stored.
-**Run that script after any change to `syllabus.js`**, or new jobs use the new
-rule while everything already stored keeps the old one.
+Three rules are worth knowing because they are where the obvious version goes
+wrong:
 
-A search term switches ranking off: someone typing "video editor" means it.
+- **A junior word in the title beats a senior one.** "AI Intern - Supporting
+  Senior Engineers" is an internship. Reading the seniority list first buries
+  exactly the postings this board exists to surface.
+- **"Remote" is not the same as open.** A remote role that says "must be
+  authorized to work in the United States" scores near zero on `indiaFit`.
+  The gate is skipped for jobs physically in India, so a Bengaluru role at a
+  US defence contractor keeps its score.
+- **Currency says nothing about eligibility.** An Indian remote role paying in
+  USD is still an Indian role.
+
+Every job stores `rankReasons` - short phrases like `["entry level",
+"Bengaluru", "direct apply", "matches claude"]` - so a position on the board
+can be accounted for rather than taken on trust.
+
+Two overrides on the sort: a **search term** replaces it with text relevance,
+because the reader has said what they want; and **`?sort=relevance`** gives
+the syllabus score alone, which is how you check that scoring without the
+reachability weights on top.
+
+**Run `scripts/backfillRankScore.js` after changing the weights.** Its default
+mode recombines the four stored components, which is exact. `--rescore`
+recomputes the components too, which is lossy because descriptions are not
+stored; the next daily run corrects it.
+
+### The relevance score itself
+
+`pipeline/syllabus.js` holds the vocabulary, transcribed from the two real
+curricula in `menler-lms/server/scripts/curricula.js`, with every band citing
+the session or week it came from. Naming Claude, MCP or prompt engineering
+counts for most; then the role shape the programme produces (AI generalist,
+automation specialist, no-code, voice agent); then the tools it teaches (n8n,
+Zapier, Lovable, ElevenLabs, Midjourney, Perplexity); and well behind, the
+generic words - generative AI, LLM, machine learning - which are twenty times
+more common and used to be worth just as much.
+
+Two things subtract: seniority the programme does not bridge and depth it
+never teaches (research scientist, PhD, MLOps, CUDA, model training).
+
+Each job stores `matchedSkills`, the terms it actually matched. Both LMS
+boards show them, and `scripts/backfillRelevance.js` reads them to rescore the
+backlog without the description.
 
 ## The board: a rolling ten-day window
 

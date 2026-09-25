@@ -671,6 +671,75 @@ A new section gets added every time a task is finished.
   rules at once. Rows written before `matchedSkills` existed score from the
   title alone until the next daily run refreshes them.
 
+## Reachability: the question relevance was not answering
+
+- **Relevance answers "does this match what we teach". It does not answer
+  "could this student get it".** A Staff Engineer role in San Francisco
+  wanting ten years and a US work visa can match the syllabus perfectly and
+  be useless to somebody finishing six weeks of study in Coimbatore.
+- **So three more scores sit beside it**, in `pipeline/ranking.js`:
+  `achievability` (level, title seniority, years demanded), `indiaFit`
+  (India-based, or remote that really hires from India), `easeOfApply`
+  (direct link, no take-home, no degree gate). `rankScore` weights all four
+  0.40 / 0.30 / 0.18 / 0.12 and the board sorts on it.
+- **Three rules are where the obvious version goes wrong.** A junior word in
+  the title beats a senior one, so "AI Intern - Supporting Senior Engineers"
+  is an internship. "Remote" plus "must be authorized to work in the US" is
+  not open, and scores near zero. And an Indian role quoted in USD is still
+  an Indian role, because currency says nothing about eligibility.
+- **"Associate" cost two goes to get right.** It overrides the seniority
+  list, which is correct for "Associate Software Engineer" and wrong for
+  "Associate Director", "Associate Vice President" and "Associate Manager" -
+  at Accenture an Associate Manager is eight years in. The first version put
+  two Accenture Associate Manager roles at the top of a sample run.
+
+### The rule that is not a weighted average
+
+- **Weighting relevance fourth breaks on jobs that are not on-topic at all.**
+  Measured on a 525-job sample: a bank's walk-in hiring drive for a customer
+  service executive in Chennai is entry level, in India, and easy to apply
+  to, so it scored 74 and ranked third. Four of the top seven were walk-in
+  drives and call-centre roles.
+- **No weighting fixes that.** Relevance at 0.12 moves such a job by four
+  points, and raising its weight far enough to matter would undo the priority
+  order the board is supposed to have.
+- **So below a threshold, relevance scales the score instead of adding to
+  it** (`OFF_TOPIC_DAMPING`). 15 sits above a category floor with no syllabus
+  match (Business scores 12) and below every category that has one (Creative,
+  Writing and Marketing 18, Tech 20). The walk-in drive drops from 74 to 44;
+  an Indian AI engineering role at 79 does not move. Set `multiplier: 1` to
+  get the pure weighted sum.
+- **Every job stores `rankReasons`**, so a position can be accounted for:
+  `["internship", "remote, hires from India", "direct apply", "matches
+  claude"]`.
+
+## More of India, and what is closed
+
+- **The scrapers were the upstream half.** No ranking can surface a listing
+  that was never fetched, and the India sweep asked 31 nationwide keywords
+  and nothing else. It now also runs 8 fresher-specific terms ("fresher",
+  "graduate engineer trainee", "0-1 years") and crosses 3 broad terms with 15
+  locations - the metros, the tier-2 cities where competition is thinner, and
+  "India remote".
+- **The arithmetic is the design.** Crossing all 31 keywords with all 15
+  locations is 465 JobSpy calls at 15-25 seconds each, which is three hours
+  inside a 6am cron. Three broad terms against 15 locations is 45 calls.
+  `search_plan()` exists so that budget is countable without running
+  anything: India went 31 -> 84 calls, global 50 -> 66.
+- **Instahyre is the one new source that is open on both counts.** Its
+  robots.txt carries no rules and it serves an unauthenticated JSON API with
+  13,000 Indian listings, filterable by job function. It gives no posting
+  date and no description, so its rows enter the window on first-seen and
+  score lower than sources that ship a full JD - which is correct, less
+  evidence should mean less confidence.
+- **Everything else is shut.** Naukri's robots.txt names `claudebot`,
+  `Claude-User` and `Claude-SearchBot` under `Disallow: /`. Foundit disallows
+  `/jobs/` and `/search/` for AI crawlers by name. Internshala disallows every
+  search and detail path. Cutshort's robots allows listings but its terms
+  prohibit "automated access, bots, scraping, data extraction" outright -
+  though it publishes a publicly documented API and MCP server, which is a
+  sanctioned route if that coverage is ever wanted.
+
 ## A bug that scored nothing, and how it hid
 
 - **The word-boundary escapes were literal backspace bytes.** A patch script

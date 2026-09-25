@@ -134,18 +134,30 @@ test("search becomes a text query and takes over the sort", () => {
     score: { $meta: "textScore" },
     postedAt: -1,
   });
-  // Without a search term the board leads on relevance, so the AI roles
-  // these students train for aren't buried under Business and Tech.
-  assert.deepEqual(buildJobSort({}), { relevance: -1, postedAt: -1 });
-  assert.deepEqual(buildJobSort({ search: "   " }), { relevance: -1, postedAt: -1 });
+  // Without a search term the board leads on rankScore: reachable first,
+  // then India, then easy to apply, then on-topic.
+  assert.deepEqual(buildJobSort({}), { rankScore: -1, postedAt: -1 });
+  assert.deepEqual(buildJobSort({ search: "   " }), { rankScore: -1, postedAt: -1 });
 });
 
-test("a search term overrides the relevance ranking", () => {
+test("the dashboard can still ask for syllabus relevance alone", () => {
+  // Useful for checking the syllabus scoring on its own, without the
+  // reachability weights sitting on top of it.
+  assert.deepEqual(buildJobSort({ sort: "relevance" }), { relevance: -1, postedAt: -1 });
+
+  // Anything else falls back to the board's own order rather than being
+  // passed through to Mongo as a field name.
+  assert.deepEqual(buildJobSort({ sort: "; drop" }), { rankScore: -1, postedAt: -1 });
+  assert.deepEqual(buildJobSort({ sort: { $ne: 1 } }), { rankScore: -1, postedAt: -1 });
+});
+
+test("a search term overrides the ranking", () => {
   // The reader has said what they want. Ranking AI roles above their own
   // query would be the board arguing with them.
   const sort = buildJobSort({ search: "video editor" });
 
   assert.ok(!("relevance" in sort));
+  assert.ok(!("rankScore" in sort));
   assert.deepEqual(sort, { score: { $meta: "textScore" }, postedAt: -1 });
 });
 

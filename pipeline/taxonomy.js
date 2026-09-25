@@ -101,6 +101,7 @@ const SOURCES = [
   { value: "linkedin", label: "LinkedIn" },
   { value: "indeed", label: "Indeed" },
   { value: "ambitionbox", label: "AmbitionBox" },
+  { value: "instahyre", label: "Instahyre" },
   { value: "remoteok", label: "RemoteOK" },
   { value: "arbeitnow", label: "Arbeitnow" },
   { value: "jobicy", label: "Jobicy" },

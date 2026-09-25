@@ -172,12 +172,36 @@ function buildJobQuery(params = {}) {
  * want: someone typing "video editor" means it, and ranking AI roles above
  * their own query would be the board arguing with them.
  */
+/**
+ * The board's order.
+ *
+ * `rankScore` first, newest breaking ties. It combines four things in
+ * priority order - can the student get it, is it open to them in India, can
+ * they apply today, does it match the syllabus - and pipeline/ranking.js
+ * holds the weights.
+ *
+ * Sorting on syllabus relevance alone put a Staff Engineer role in San
+ * Francisco wanting ten years above an AI automation internship in Pune,
+ * which is the right answer to the wrong question.
+ *
+ * Two overrides:
+ *
+ *   search      the reader has said what they want, and ranking anything
+ *               above their own query would be the board arguing with them.
+ *   sort=relevance   the dashboard's "most on-topic" view, which is useful
+ *               for checking the syllabus scoring without the reachability
+ *               weights on top of it.
+ */
 function buildJobSort(params = {}) {
-  const hasSearch = Boolean(cleanString(params.search));
+  if (cleanString(params.search)) {
+    return { score: { $meta: "textScore" }, postedAt: -1 };
+  }
 
-  return hasSearch
-    ? { score: { $meta: "textScore" }, postedAt: -1 }
-    : { relevance: -1, postedAt: -1 };
+  if (cleanString(params.sort) === "relevance") {
+    return { relevance: -1, postedAt: -1 };
+  }
+
+  return { rankScore: -1, postedAt: -1 };
 }
 
 /** Clamped so a caller can't ask for all 9,800 rows in one response. */

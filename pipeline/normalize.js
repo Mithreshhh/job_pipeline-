@@ -15,6 +15,7 @@
 
 const { createJob } = require("./schema");
 const SYLLABUS = require("./syllabus");
+const { scoreJobRank } = require("./ranking");
 
 /**
  * Technical AI roles, used to classify an incoming title as AI-Tech.
@@ -930,6 +931,33 @@ const MAPPERS = {
       levelText: years,
     };
   },
+  instahyre(raw) {
+    const employer = raw.employer || {};
+    // A skill array, not prose. It is all the text this source gives, so it
+    // stands in for the description everywhere one is read - and because it
+    // is short, jobs from here score lower than jobs that ship a real JD.
+    const skills = Array.isArray(raw.keywords) ? raw.keywords.join(", ") : "";
+    const location = raw.locations || null;
+
+    return {
+      title: raw.title || null,
+      company: employer.company_name || null,
+      location,
+      defaultCountry: "India",
+      // Instahyre's own word for remote, and the only place it appears.
+      isRemote: /work from home|remote/i.test(String(location)),
+      url: raw.public_url || null,
+      // The API carries no posting date at all. Left null deliberately rather
+      // than defaulted to today, which would present a six-month-old listing
+      // as this morning's; the read-time window falls back to fetchedAt.
+      postedAt: null,
+      matchText: toText(raw.title, skills),
+      typeText: "",
+      levelTitle: toText(raw.title),
+      levelText: "",
+    };
+  },
+
   lever(raw) {
     const categories = raw.categories || {};
     const location = categories.location || null;
@@ -985,13 +1013,14 @@ const SOURCE_ALIASES = {
   ashby: "ashby",
   lever: "lever",
   ambitionbox: "ambitionbox",
+  instahyre: "instahyre",
   weworkremotely: "weworkremotely",
 };
 
 // Matched against the wrapper's own source string, not the mapper alias:
 // india.py writes "jobspy", jobspy_global.py writes "jobspy-indeed" /
 // "jobspy-linkedin", and all three share the same mapper.
-const INDIA_SOURCES = new Set(["jobspy", "ambitionbox"]);
+const INDIA_SOURCES = new Set(["jobspy", "ambitionbox", "instahyre"]);
 
 function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany }) {
   const mapperName = SOURCE_ALIASES[source];
@@ -1014,15 +1043,34 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     experienceLevel,
   });
 
+  const country = detectCountry({
+    locationText: toText(mapped.location),
+    defaultCountry: mapped.defaultCountry || defaultCountry,
+  });
+
+  // Reachability: can this student get it, is it open to them, and can they
+  // apply today. Scored here rather than at read time for the same reason
+  // relevance is - it never changes for a stored job, and the board sorts on
+  // it. Reads the description, which is the only moment we have it.
+  const rank = scoreJobRank({
+    title: mapped.title,
+    description: mapped.matchText,
+    location: mapped.location,
+    country,
+    isRemote: mapped.isRemote,
+    url: mapped.url,
+    source: sourceName,
+    experienceLevel,
+    relevance: scored.relevance,
+    matchedSkills: scored.matchedSkills,
+  });
+
   return createJob({
     title: mapped.title,
     // Ashby job objects carry no company name - only the board does.
     company: mapped.company || entryCompany || null,
     location: mapped.location,
-    country: detectCountry({
-      locationText: toText(mapped.location),
-      defaultCountry: mapped.defaultCountry || defaultCountry,
-    }),
+    country,
     isRemote: mapped.isRemote,
     url: mapped.url,
     source: sourceName,
@@ -1033,6 +1081,11 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     // could only ever see the title, and 99% of syllabus evidence lives in
     // the body text.
     matchedSkills: scored.matchedSkills,
+    achievability: rank.achievability,
+    indiaFit: rank.indiaFit,
+    easeOfApply: rank.easeOfApply,
+    rankScore: rank.rankScore,
+    rankReasons: rank.rankReasons,
     experienceLevel,
     postedAt: mapped.postedAt,
     fetchedAt,
@@ -1095,6 +1148,7 @@ module.exports = {
   classifyRole,
   scoreRelevance,
   scoreRelevanceDetailed,
+  scoreJobRank,
   collectSyllabusEvidence,
   detectWorkType,
   detectExperienceLevel,

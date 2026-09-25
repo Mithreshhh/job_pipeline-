@@ -62,6 +62,7 @@ export const SOURCES: (Facet & { expected: boolean })[] = [
   { value: 'lever', label: 'Lever', expected: true },
   { value: 'indeed', label: 'Indeed', expected: true },
   { value: 'ambitionbox', label: 'AmbitionBox', expected: true },
+  { value: 'instahyre', label: 'Instahyre', expected: true },
   { value: 'linkedin', label: 'LinkedIn', expected: true },
   { value: 'freelancer', label: 'Freelancer.com', expected: true },
   { value: 'arbeitnow', label: 'Arbeitnow', expected: true },
