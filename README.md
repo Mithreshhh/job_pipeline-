@@ -22,9 +22,17 @@ schema, and stores them so they can power the Skeo and Menler job boards.
 
 Defined in `pipeline/schema.js` — the shape every scraper normalizes into:
 
-`title, company, location, country, isRemote, url, source, roleCategory,
-workType, relevance, matchedSkills, achievability, indiaFit, easeOfApply,
-rankScore, rankReasons, experienceLevel, postedAt, fetchedAt`
+`title, company, location, country, isRemote, url, source, companyLogo,
+roleCategory, workType, relevance, matchedSkills, achievability, indiaFit,
+easeOfApply, rankScore, rankReasons, experienceLevel, postedAt, fetchedAt`
+
+`companyLogo` comes free from the five sources that ship one: JobSpy
+(~60% of rows), Himalayas, Jobicy, Instahyre, and AmbitionBox (which gives a
+slug, so the URL is built from its own pattern). Greenhouse, Lever, Ashby,
+Arbeitnow and WeWorkRemotely ship nothing, and RemoteOK has the field but
+leaves it empty, so **null is the normal case** and both boards draw a
+monogram instead. Only `http(s)` URLs are kept, since the value ends up in an
+`<img src>`.
 
 The stored record (`db/jobModel.js`) adds three more, which the database
 layer maintains rather than the scrapers:

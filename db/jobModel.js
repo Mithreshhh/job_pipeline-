@@ -66,6 +66,11 @@ const jobSchema = new mongoose.Schema({
   // rescore could only ever see the title again.
   matchedSkills: { type: [String], default: [] },
 
+  // Five of the eleven sources ship a logo URL (JobSpy, Himalayas, Jobicy,
+  // Instahyre, AmbitionBox); the company boards ship none. Null is the normal
+  // case, and both LMS boards draw a monogram instead.
+  companyLogo: { type: String, default: null },
+
   // The three reachability scores, and the combined number the board sorts
   // on. All 0-100, all written by pipeline/ranking.js at normalize time for
   // the same reason relevance is: a stored number turns the board's default

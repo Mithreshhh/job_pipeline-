@@ -13,6 +13,7 @@ const JOB_SCHEMA_FIELDS = [
   "isRemote",
   "url",
   "source",
+  "companyLogo",
   "roleCategory",
   "workType",
   "relevance",

@@ -1,3 +1,9 @@
+// A client component only because a logo can 404: the fallback to a monogram
+// needs state, and onError only exists in the browser. Everything else here
+// renders fine on the server.
+'use client'
+
+import { useState } from 'react'
 import type { Job } from '@/lib/jobs'
 import {
   AI_CATEGORIES,
@@ -18,6 +24,49 @@ function ago(date: Date | null): string {
   return `${Math.round(days / 365)}y ago`
 }
 
+/**
+ * The employer's logo where a source gave one, a monogram otherwise.
+ *
+ * Six of the eleven sources ship nothing, so the monogram is the normal case.
+ * The colour is hashed off the company name, so one employer keeps one colour
+ * down the page.
+ */
+const TONES = [
+  'bg-blue-500', 'bg-violet-500', 'bg-fuchsia-500', 'bg-rose-500',
+  'bg-orange-500', 'bg-amber-600', 'bg-emerald-600', 'bg-cyan-600',
+]
+
+function CompanyLogo({ company, src }: { company: string | null; src?: string | null }) {
+  const [failed, setFailed] = useState(false)
+  const name = (company || '?').trim() || '?'
+
+  if (src && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="size-7 flex-none rounded border border-line bg-white object-contain p-0.5"
+      />
+    )
+  }
+
+  let hash = 0
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid size-7 flex-none place-items-center rounded text-[11px] font-semibold text-white ${TONES[hash % TONES.length]}`}
+    >
+      {name[0].toUpperCase()}
+    </span>
+  )
+}
+
 function Row({ job }: { job: Job }) {
   const isAi = job.roleCategory
     ? AI_CATEGORIES.includes(job.roleCategory)
@@ -31,7 +80,9 @@ function Row({ job }: { job: Job }) {
         job.isActive ? '' : 'opacity-55'
       }`}
     >
-      <div className="min-w-0">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <CompanyLogo company={job.company} src={job.companyLogo} />
+        <div className="min-w-0">
         <a
           href={job.url}
           target="_blank"
@@ -44,6 +95,7 @@ function Row({ job }: { job: Job }) {
           {job.company || 'Company not stated'}
           <span className="mx-1.5 text-line-2">/</span>
           {place}
+        </div>
         </div>
       </div>
 

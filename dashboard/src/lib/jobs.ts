@@ -29,6 +29,8 @@ export type Job = {
   isRemote: boolean
   url: string
   source: string | null
+  /** Only five of eleven sources ship one; null is the normal case. */
+  companyLogo?: string | null
   sources?: string[]
   roleCategory: string | null
   /** The syllabus terms this listing matched, which is what `relevance` is scored from. */

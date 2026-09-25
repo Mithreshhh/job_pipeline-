@@ -729,6 +729,27 @@ function detectCountry({ locationText, defaultCountry }) {
  * the tagging steps scan: matchText for relevance, and levelTitle /
  * levelText (title-side vs description-side) for seniority.
  */
+/**
+ * AmbitionBox gives a company slug rather than a URL. This is the pattern its
+ * own pages use, verified against a live response: .jpg only, .png 404s.
+ */
+function ambitionBoxLogo(slug) {
+  if (typeof slug !== "string" || !slug.trim()) return null;
+  return `https://static.ambitionbox.com/alpha/company/photos/logos/${slug.trim()}.jpg`;
+}
+
+/**
+ * Only http(s) URLs reach the schema.
+ *
+ * These are third-party strings that end up in an <img src> on both LMS
+ * boards, so a `javascript:` or `data:` value must not survive the mapper.
+ */
+function safeLogoUrl(value) {
+  if (typeof value !== "string") return null;
+  const url = value.trim();
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
 const MAPPERS = {
   jobspy(raw) {
     const description = stripHtml(raw.description);
@@ -745,6 +766,7 @@ const MAPPERS = {
       isRemote: Boolean(raw.is_remote),
       url: raw.job_url || raw.job_url_direct || null,
       postedAt: toIsoDate(raw.date_posted),
+      companyLogo: safeLogoUrl(raw.company_logo),
       matchText: toText(raw.title, description),
       typeText: toText(raw.job_type),
       levelTitle: toText(raw.title, raw.job_level, raw.experience_range),
@@ -797,6 +819,7 @@ const MAPPERS = {
       location: raw.jobGeo || "Remote",
       isRemote: true,
       url: raw.url || null,
+      companyLogo: safeLogoUrl(raw.companyLogo),
       postedAt: toIsoDate(raw.pubDate),
       matchText: toText(raw.jobTitle, description, raw.jobIndustry),
       typeText: toText(raw.jobType),
@@ -818,6 +841,7 @@ const MAPPERS = {
       location: locations.length > 0 ? locations.join(", ") : "Remote",
       isRemote: true,
       url: raw.applicationLink || raw.guid || null,
+      companyLogo: safeLogoUrl(raw.companyLogo),
       postedAt: toIsoDate(raw.pubDate),
       matchText: toText(raw.title, description, raw.categories),
       typeText: toText(raw.employmentType),
@@ -924,6 +948,7 @@ const MAPPERS = {
       isRemote: /\bremote\b/i.test(toText(location, raw.title, raw.workMode)),
       // jdpUrl is a path, not a URL.
       url: raw.jdpUrl ? `https://www.ambitionbox.com${raw.jdpUrl}` : null,
+      companyLogo: safeLogoUrl(ambitionBoxLogo(raw.companyLogo)),
       postedAt: toIsoDate(raw.postedAtIso),
       matchText: toText(raw.title, raw.jobProfile, skills),
       typeText: "",
@@ -946,6 +971,7 @@ const MAPPERS = {
       defaultCountry: "India",
       // Instahyre's own word for remote, and the only place it appears.
       isRemote: /work from home|remote/i.test(String(location)),
+      companyLogo: safeLogoUrl(employer.profile_image_src),
       url: raw.public_url || null,
       // The API carries no posting date at all. Left null deliberately rather
       // than defaulted to today, which would present a six-month-old listing
@@ -1074,6 +1100,9 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     isRemote: mapped.isRemote,
     url: mapped.url,
     source: sourceName,
+    // Only five of the eleven sources ship one. The boards fall back to a
+    // monogram rather than leaving a hole, so a null here is normal.
+    companyLogo: mapped.companyLogo || null,
     roleCategory,
     workType: detectWorkType(mapped.typeText, toText(mapped.title), sourceName),
     relevance: scored.relevance,
@@ -1149,6 +1178,8 @@ module.exports = {
   scoreRelevance,
   scoreRelevanceDetailed,
   scoreJobRank,
+  ambitionBoxLogo,
+  safeLogoUrl,
   collectSyllabusEvidence,
   detectWorkType,
   detectExperienceLevel,
