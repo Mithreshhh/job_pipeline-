@@ -16,6 +16,7 @@
 const { createJob } = require("./schema");
 const SYLLABUS = require("./syllabus");
 const { scoreJobRank } = require("./ranking");
+const { classifyDomain } = require("./domain");
 
 /**
  * Technical AI roles, used to classify an incoming title as AI-Tech.
@@ -1104,6 +1105,9 @@ function normalizeJob(rawJob, { source, defaultCountry, fetchedAt, entryCompany 
     // monogram rather than leaving a hole, so a null here is normal.
     companyLogo: mapped.companyLogo || null,
     roleCategory,
+    // The job's function, for browsing. Title plus category only, so a
+    // backfill reproduces it exactly - see pipeline/domain.js.
+    domain: classifyDomain(mapped.title, roleCategory),
     workType: detectWorkType(mapped.typeText, toText(mapped.title), sourceName),
     relevance: scored.relevance,
     // Stored because the description is not: without it, a later rescore

@@ -15,6 +15,7 @@ const JOB_SCHEMA_FIELDS = [
   "source",
   "companyLogo",
   "roleCategory",
+  "domain",
   "workType",
   "relevance",
   "matchedSkills",

@@ -23,7 +23,7 @@ schema, and stores them so they can power the Skeo and Menler job boards.
 Defined in `pipeline/schema.js` — the shape every scraper normalizes into:
 
 `title, company, location, country, isRemote, url, source, companyLogo,
-roleCategory, workType, relevance, matchedSkills, achievability, indiaFit,
+roleCategory, domain, workType, relevance, matchedSkills, achievability, indiaFit,
 easeOfApply, rankScore, rankReasons, experienceLevel, postedAt, fetchedAt`
 
 `companyLogo` comes free from the five sources that ship one: JobSpy
@@ -50,8 +50,16 @@ can be tagged with, and is mirrored by both LMS job boards.
 | Field | Values |
 | --- | --- |
 | `roleCategory` | `AI-Tech` `AI-NonTech` `Tech` `Creative` `Marketing` `Writing` `Business` |
+| `domain` | `ai-ml` `ai-generalist` `software` `data` `product` `founders-office` `design` `marketing` `content` `sales` `operations` |
 | `workType` | `full-time` `part-time` `contract` `freelance` `internship` `unspecified` |
 | `experienceLevel` | `internship` `entry` `mid` `senior` `unspecified` |
+
+**`domain` is what students browse by; `roleCategory` is what the syllabus
+score is built on.** They answer different questions (what kind of job is
+this, versus is this AI work and is it technical), so domain was added beside
+roleCategory rather than replacing it. It is classified from the title plus
+roleCategory only, first matching rule wins (`pipeline/domain.js`), which makes
+`scripts/backfillDomain.js` exact rather than approximate.
 
 Values are lowercase slugs and are never display labels — labels live in
 the same file and can be reworded without touching stored data. Anything

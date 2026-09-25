@@ -59,6 +59,11 @@ const jobSchema = new mongoose.Schema({
   // stored number is the difference between an index scan and a full one.
   relevance: { type: Number, default: 0 },
 
+  // What kind of job it is - Product, Founder's Office, Full Stack - which is
+  // how students browse. See DOMAINS in pipeline/taxonomy.js for why this
+  // sits beside roleCategory rather than replacing it.
+  domain: { type: String, default: null, index: false },
+
   // The syllabus terms this posting actually evidenced - "claude", "n8n",
   // "prompt engineering". Stored for two reasons: it is what makes a job's
   // position on the board explainable to the student looking at it, and the
@@ -115,6 +120,9 @@ jobSchema.index({ url: 1 }, { unique: true });
 // "this category, newest first" and "everything, newest first".
 // The board's default order: best overall match first, newest breaking ties.
 jobSchema.index({ isActive: 1, rankScore: -1, postedAt: -1 });
+// The domain filter on its own is the board's most common narrowing, and it
+// is always combined with the default sort.
+jobSchema.index({ isActive: 1, domain: 1, rankScore: -1 });
 // Kept because the dashboard still offers a sort by syllabus relevance alone.
 jobSchema.index({ isActive: 1, relevance: -1, postedAt: -1 });
 jobSchema.index({ isActive: 1, postedAt: -1 });

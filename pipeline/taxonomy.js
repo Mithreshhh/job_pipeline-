@@ -96,6 +96,38 @@ const EXPERIENCE_LEVELS = [
   { value: "unspecified", label: "Not specified" },
 ];
 
+/**
+ * The function of the job - what a student browses by.
+ *
+ * Deliberately separate from roleCategory rather than a rename of it.
+ * roleCategory answers "is this AI work, and technical or not", and the
+ * syllabus relevance score is built on that split (pipeline/syllabus.js,
+ * CATEGORY_BASE). Domain answers "what kind of job is it" - Product,
+ * Founder's Office, Full Stack - which is how people actually look for work.
+ * Folding the two into one list would have meant retuning the relevance
+ * score to browse better, or browsing worse to keep the score.
+ *
+ * Classified from the title plus roleCategory only, never the description,
+ * so scripts/backfillDomain.js can recompute every stored row exactly.
+ *
+ * Order is the order the board offers them in: the AI domains first because
+ * that is what the programmes train for, then the rest roughly by how many
+ * students go looking.
+ */
+const DOMAINS = [
+  { value: "ai-ml", label: "AI & Machine Learning" },
+  { value: "ai-generalist", label: "AI Generalist & Automation" },
+  { value: "software", label: "Full Stack & Software" },
+  { value: "data", label: "Data & Analytics" },
+  { value: "product", label: "Product" },
+  { value: "founders-office", label: "Founder's Office & Strategy" },
+  { value: "design", label: "Design & Creative" },
+  { value: "marketing", label: "Marketing & Growth" },
+  { value: "content", label: "Content & Writing" },
+  { value: "sales", label: "Sales & Customer Success" },
+  { value: "operations", label: "Operations, HR & Finance" },
+];
+
 /** The boards a listing can come from, as stored in `source`. */
 const SOURCES = [
   { value: "linkedin", label: "LinkedIn" },
@@ -117,6 +149,7 @@ const SOURCES = [
 const values = (entries) => entries.map((entry) => entry.value);
 
 const ROLE_CATEGORY_VALUES = values(ROLE_CATEGORIES);
+const DOMAIN_VALUES = values(DOMAINS);
 const WORK_TYPE_VALUES = values(WORK_TYPES);
 const EXPERIENCE_LEVEL_VALUES = values(EXPERIENCE_LEVELS);
 const SOURCE_VALUES = values(SOURCES);
@@ -154,6 +187,7 @@ const labelLookup = (entries) => {
 };
 
 const roleCategoryLabel = labelLookup(ROLE_CATEGORIES);
+const domainLabel = labelLookup(DOMAINS);
 const workTypeLabel = labelLookup(WORK_TYPES);
 const experienceLevelLabel = labelLookup(EXPERIENCE_LEVELS);
 const sourceLabel = labelLookup(SOURCES);
@@ -173,11 +207,16 @@ function normalizeWorkType(input) {
 }
 
 const isRoleCategory = (value) => ROLE_CATEGORY_VALUES.includes(value);
+const isDomain = (value) => DOMAIN_VALUES.includes(value);
 const isWorkType = (value) => WORK_TYPE_VALUES.includes(value);
 const isExperienceLevel = (value) => EXPERIENCE_LEVEL_VALUES.includes(value);
 
 module.exports = {
   ROLE_CATEGORIES,
+  DOMAINS,
+  DOMAIN_VALUES,
+  domainLabel,
+  isDomain,
   WORK_TYPES,
   EXPERIENCE_LEVELS,
   SOURCES,

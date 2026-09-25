@@ -31,6 +31,7 @@ const Job = require("./jobModel");
 const { connectToMongo } = require("./connection");
 const {
   isRoleCategory,
+  isDomain,
   isWorkType,
   isExperienceLevel,
 } = require("../pipeline/taxonomy.js");
@@ -133,6 +134,9 @@ function buildJobQuery(params = {}) {
 
   const categories = cleanList(params.category, isRoleCategory);
   if (categories.length) query.roleCategory = { $in: categories };
+
+  const domains = cleanList(params.domain, isDomain);
+  if (domains.length) query.domain = { $in: domains };
 
   const workTypes = cleanList(params.workType, isWorkType);
   if (workTypes.length) query.workType = { $in: workTypes };
