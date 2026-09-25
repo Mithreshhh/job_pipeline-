@@ -556,3 +556,21 @@ test("damping can be switched off without touching the scoring", () => {
 
   assert.equal(combineRank(job), Math.round(weighted * OFF_TOPIC_DAMPING.multiplier));
 });
+
+test("a Senior Associate is not a junior role", () => {
+  // "Associate" overrides the seniority list, so "Senior" in front of it was
+  // never read. 74 stored titles scored 88 on achievability this way,
+  // including three at the top of the AI Generalist domain.
+  for (const title of [
+    "Senior Associate Technology Risk Prompt Engineer",
+    "AI Infrastructure Prompt Engineer Sr. Associate",
+    "Senior Associate - Conversational AI / RAG Engineer",
+    "Snr Associate, Data",
+  ]) {
+    const { score } = scoreAchievability({ title, experienceLevel: "unspecified" });
+    assert.ok(score < 30, `"${title}" scored ${score}`);
+  }
+
+  // A plain Associate is still the first job it usually is.
+  assert.ok(scoreAchievability({ title: "Associate Data Analyst", experienceLevel: "unspecified" }).score > 80);
+});

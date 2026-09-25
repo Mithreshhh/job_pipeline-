@@ -135,7 +135,11 @@ const JUNIOR_TITLE = [
   // an Associate Manager is eight years in - and because this list overrides
   // the seniority one, a bare match here put two of them at the top of a real
   // sample run.
-  ["associate", /\bassociates?\b(?!\s+(director|vice president|vp|manager|lead|partner|principal|professor|dean|general counsel))/i],
+  // Nor is "Senior Associate", which at the Big Four and most consultancies
+  // is three to five years in. Measured: 74 stored titles, every one of them
+  // scored 88 on achievability before the lookbehind, because this list
+  // overriding the seniority one meant "Senior" was never read.
+  ["associate", /(?<!\b(senior|sr\.?|snr)\s)\bassociates?\b(?!\s+(director|vice president|vp|manager|lead|partner|principal|professor|dean|general counsel))/i],
   ["apprentice", /\bapprentice(ship)?\b/i],
 ];
 

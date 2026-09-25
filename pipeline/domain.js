@@ -26,16 +26,21 @@ const RULES = [
   // would otherwise fall through to Operations.
   [
     "founders-office",
-    /\bfounder'?s?['’]?\s*office\b|\boffice of the (ceo|founder|md)\b|\bchief of staff\b|\bbiz\s?ops\b|\bbusiness operations\b|\bstrategy\s*(&|and)\s*operations\b|\b(strategy|strategic)\s+(associate|analyst|manager|consultant|lead|intern|initiatives)\b|\bmanagement consult\w*\b|\bentrepreneur in residence\b|\bgrowth\s*(&|and)\s*strategy\b|\bcorporate development\b/i,
+    /\bfounder'?s?['’]?\s*office\b|\boffice of the (ceo|founder|md)\b|\bchief of staff\b|\bbiz\s?ops\b|\bbusiness operations\b|\bstrategy\s*(&|and)\s*operations\b|(?<!\b(content|brand|marketing|social media|seo|product|design|growth|sales|media)\s)\b(strategy|strategic)\s+(associate|analyst|manager|consultant|lead|intern|initiatives)\b|\bmanagement consult\w*\b|\bentrepreneur in residence\b|\bgrowth\s*(&|and)\s*strategy\b|\bcorporate development\b/i,
   ],
 
-  // Before Software, which would claim "Automation Engineer", and before
-  // Content and Design, which would claim "AI Content Creator". QA and test
-  // automation are excluded here - they are software testing, not the
+  // Before Software, which would claim "Workflow Automation Engineer", and
+  // before Content and Design, which would claim "AI Content Creator".
+  //
+  // A bare "Automation Engineer" is deliberately NOT here. In Indian postings
+  // it is usually industrial automation - PLCs, SCADA, a factory floor - and
+  // the first version of this rule put one at the top of this domain. It
+  // needs a qualifier ("AI", "workflow", "process") to count. QA and test
+  // automation are excluded for the same reason: software testing, not the
   // generalist work this domain is for.
   [
     "ai-generalist",
-    /\bai\s+(generalist|consultant|strategist|operator|trainer|tutor|evaluator|annotator|specialist|enablement|adoption|transformation|operations|ops|implementation|champion|analyst)\b|\bprompt\s+(engineer|designer|writer|specialist)\w*\b|\b(data|ai)\s+(annotat|label)\w*\b|\brlhf\b|\b(workflow|process|business|marketing)\s+automation\b|\b(?<!(qa|test|testing|quality)\s)automation\s+(specialist|consultant|analyst|developer|lead|intern|engineer)\b|\bno[\s-]?code\b|\blow[\s-]?code\b|\bforward[\s-]deployed\b|\bconversation(al)?\s+designer\b|\bsearch quality rater\b|\bmodel evaluator\b/i,
+    /\bai\s+(generalist|consultant|strategist|operator|trainer|tutor|evaluator|annotator|specialist|enablement|adoption|transformation|operations|ops|implementation|champion|analyst|automation)\b|\bprompt\s+(engineer|designer|writer|specialist)\w*\b|\b(data|ai)\s+(annotat|label)\w*\b|\brlhf\b|\b(workflow|process|business|marketing)\s+automation\b|\b(?<!(qa|test|testing|quality)\s)automation\s+(specialist|consultant|analyst|developer|lead|intern)\b|\bno[\s-]?code\b|\blow[\s-]?code\b|\bforward[\s-]deployed\b|\bconversation(al)?\s+designer\b|\bsearch quality rater\b|\bmodel evaluator\b/i,
   ],
 
   // Before Product, so "Product Designer" is design work, and before Content,
@@ -48,18 +53,18 @@ const RULES = [
   // Before Marketing, which would claim "Content Marketing Writer".
   [
     "content",
-    /\bcontent\s+(writer|creator|strategist|editor|developer|specialist|lead|manager|writing|intern)\b|\bcopy\s?writ\w*\b|\btechnical\s+writ\w*\b|\bghost\s?writ\w*\b|\bscript\s?writ\w*\b|\bjournalist\b|\breporter\b|\btranslat(or|ion)\b|\btranscri(ber|ption)\w*\b|\bproof\s?read\w*\b|\bblogger\b|\bugc\b|\beditor\b|\bwriter\b/i,
+    /\bcontent\s+(writer|creator|strategist|strategy|editor|developer|specialist|lead|manager|writing|intern)\b|\bcopy\s?writ\w*\b|\btechnical\s+writ\w*\b|\bghost\s?writ\w*\b|\bscript\s?writ\w*\b|\bjournalist\b|\breporter\b|\btranslat(or|ion)\b|\btranscri(ber|ption)\w*\b|\bproof\s?read\w*\b|\bblogger\b|\bugc\b|\beditor\b|\bwriter\b/i,
   ],
 
   // Before Product, so "Product Marketing Manager" lands in marketing.
   [
     "marketing",
-    /\bmarketing\b|\bmarketer\b|\bseo\b|\bsem\b|\bppc\b|\bsocial media\b|\bgrowth\s+(hacker|lead|manager|associate|analyst|intern|marketer)\b|\bhead of growth\b|\bperformance\s+(marketer|manager|specialist)\b|\bbrand\s+(manager|strategist|associate|executive)\b|\bcommunity\s+(manager|lead|associate)\b|\binfluencer\b|\bmedia\s+(buyer|planner)\b|\bpublic relations\b|\b(pr|communications)\s+(manager|executive|associate|specialist)\b|\bevents?\s+(manager|coordinator|executive|marketing|specialist)\b/i,
+    /\bmarketing\b|\bmarketer\b|\bseo\b|\bsem\b|\bppc\b|\bsocial media\b|\bgrowth\s+(hacker|lead|manager|associate|analyst|intern|marketer)\b|\bhead of growth\b|\bperformance\s+(marketer|manager|specialist)\b|\bbrand\s+(manager|strategist|strategy|associate|executive|lead)\b|\bcommunity\s+(manager|lead|associate)\b|\binfluencer\b|\bmedia\s+(buyer|planner)\b|\bpublic relations\b|\b(pr|communications)\s+(manager|executive|associate|specialist)\b|\bevents?\s+(manager|coordinator|executive|marketing|specialist)\b/i,
   ],
 
   [
     "product",
-    /\bproduct\s+(manager|owner|lead|analyst|management|intern|associate|specialist|head|director|strategy|operations|expert)\b|\bapm\b|\bassociate product manager\b|\bhead of product\b|\bproduct ops\b/i,
+    /\bproduct\s+(manager|owner|lead|analyst|management|intern|associate|specialist|head|director|strategy|expert)\b|\bapm\b|\bassociate product manager\b|\bhead of product\b|\bproduct ops\b/i,
   ],
 
   // Before Data and Software, both of which it overlaps: "Data Scientist" is

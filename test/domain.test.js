@@ -182,3 +182,24 @@ test("no domain pattern depends on a literal control character", () => {
   const control = source.match(/[\x00-\x08\x0b\x0c\x0e-\x1f]/);
   assert.equal(control, null, `domain.js holds control byte ${control && control[0].charCodeAt(0)}`);
 });
+
+test("the four mistakes the live board surfaced stay fixed", () => {
+  // Each of these sat at the top of its domain on the real board the first
+  // time the filters were run against it.
+  expectDomain([
+    // The content rule knew "strategist" but not "strategy", so the late
+    // generic strategy rule filed this under Founder's Office.
+    ["Content Strategy Intern", "Writing", "content"],
+    // "product operations" pulled an ML intern into Product.
+    ["PhD Intern, Machine Learning: MSI, Product Operation", "AI-Tech", "ai-ml"],
+    // Industrial automation - PLCs, SCADA - is not AI generalist work.
+    ["Automation Engineer", "Tech", "software"],
+    // ...but with a qualifier it is.
+    ["AI Automation Engineer", "AI-Tech", "ai-generalist"],
+    ["Workflow Automation Engineer", "Tech", "ai-generalist"],
+    // The early Founder's Office rule matched "Strategy Intern" before the
+    // content rule was reached, so a function word in front now excludes it.
+    ["Brand Strategy Manager", "Marketing", "marketing"],
+    ["Strategy Intern", "Business", "founders-office"],
+  ]);
+});
