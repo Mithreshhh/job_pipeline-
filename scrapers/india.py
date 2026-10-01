@@ -68,6 +68,24 @@ KEYWORDS = [
     # Business
     "business analyst",
     "product manager",
+    # The roles beyond AI a Menler graduate goes into. Menler LMS gives each
+    # a lane on its board (server/utils/jobShortlist.js there), and measured
+    # on the live feed the product and founder's office lanes could not fill
+    # their share - 43 product and 25 founder's office roles open to an
+    # Indian fresher in ten days, from 35,000 listings - because nothing here
+    # searched for them by name. A lane with no keyword is a lane with no jobs.
+    "associate product manager",
+    "product engineer",
+    "product analyst",
+    "founder's office",
+    "chief of staff",
+    "business development",
+    "operations executive",
+    "customer success",
+    "HR executive",
+    # Indian employers post freelance work on Indeed too, not only on the
+    # freelance marketplaces scrapers/freelance.js covers.
+    "freelance",
 ]
 
 # Terms that find the jobs a Menler graduate can actually get, which the
@@ -113,14 +131,14 @@ CITIES = [
 
 # What gets crossed with every city. Deliberately three terms and not thirty.
 #
-# The arithmetic is the whole design here. Crossing all 31 keywords with all
-# 15 locations is 465 JobSpy calls at 15-25 seconds each, which is three
+# The arithmetic is the whole design here. Crossing all 41 keywords with all
+# 15 locations is 615 JobSpy calls at 15-25 seconds each, which is over three
 # hours for a job that has to finish inside a 6am cron. Three broad terms
 # against 15 locations is 45 calls, and because they are broad they return
 # the city's AI and entry-level postings rather than one narrow title's.
 #
-# Total plan: 31 nationwide + 8 fresher + 45 city = 84 calls, against 31
-# before. Change CITY_KEYWORDS and you change the runtime linearly, so check
+# Total plan: 41 nationwide + 8 fresher + 45 city = 94 calls, against 31
+# originally. Change CITY_KEYWORDS and you change the runtime linearly, so check
 # search_plan() before adding to it.
 CITY_KEYWORDS = [
     "AI",
