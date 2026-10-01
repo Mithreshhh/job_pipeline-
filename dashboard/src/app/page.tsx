@@ -21,6 +21,12 @@ export const dynamic = 'force-dynamic'
 type SearchParams = Record<string, string | string[] | undefined>
 
 const nf = (n: number) => n.toLocaleString('en-IN')
+const day = new Intl.DateTimeFormat('en-IN', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'Asia/Kolkata',
+})
 const pct = (n: number, of: number) =>
   of === 0 ? '—' : `${((n * 100) / of).toFixed(1)}%`
 
@@ -180,6 +186,49 @@ export default async function Page({
         <section className="mt-6">
           <Eyebrow>This morning</Eyebrow>
           <RunStatus pulse={pulse} />
+        </section>
+
+        <section className="mt-7">
+          <Eyebrow>All time</Eyebrow>
+          <TileRow>
+            <Tile
+              label="Jobs collected"
+              value={nf(pulse.lifetime.collected)}
+              note={
+                pulse.lifetime.since
+                  ? `since ${day.format(pulse.lifetime.since)}, every source`
+                  : 'every source'
+              }
+              tone="accent"
+            />
+            <Tile
+              label="Live right now"
+              value={nf(pulse.onBoard)}
+              note={`posted in the last ${FRESH_DAYS} days`}
+            />
+            <Tile
+              label="New last run"
+              value={nf(pulse.newInLastRun)}
+              note={pulse.lastRunAt ? `run of ${day.format(pulse.lastRunAt)}` : 'no run yet'}
+              tone="signal"
+            />
+            <Tile
+              label="Stored now"
+              value={nf(pulse.total)}
+              note="older than 60 days is deleted"
+            />
+            <Tile
+              label="Runs"
+              value={pulse.lifetime.runs === null ? '—' : nf(pulse.lifetime.runs)}
+              note={pulse.lifetime.recorded ? 'recorded by the pipeline' : 'counting starts next run'}
+            />
+          </TileRow>
+          <p className="mt-2.5 text-[12px] text-ink-3">
+            Collected is the running total the pipeline keeps in{' '}
+            <code className="font-mono">pipeline_stats</code>: the purge deletes
+            rows sixty days past posting, so the stored count alone would
+            shrink. It never shows less than what is stored.
+          </p>
         </section>
 
         <section className="mt-7">

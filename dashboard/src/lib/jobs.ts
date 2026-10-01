@@ -237,6 +237,58 @@ export type Pulse = {
   aiIndia: number
   sources: SourceHealth[]
   missingSources: SourceHealth[]
+  /** Everything ever collected - see getLifetime(). */
+  lifetime: Lifetime
+}
+
+/**
+ * The pipeline's all-time totals, from `pipeline_stats` / `lifetime`, which
+ * db/pipelineStats.js writes at the end of every run.
+ *
+ * `total` above cannot stand in for it: the pipeline deletes rows sixty days
+ * past posting, so the stored count is "collected lately" and shrinks the day
+ * a purge runs. Until the first run with the counter, the document does not
+ * exist, so the stored count is used as the floor - the same rule the
+ * pipeline applies when it writes.
+ */
+export type Lifetime = {
+  /** Postings ever stored, never below what is stored now. */
+  collected: number
+  /** When collecting began. */
+  since: Date | null
+  /** Runs that recorded themselves; null before the counter's first run. */
+  runs: number | null
+  /** False until the pipeline has written the counter once. */
+  recorded: boolean
+}
+
+type LifetimeDoc = {
+  _id: string
+  jobsCollected?: number
+  runs?: number
+  firstSeenAt?: Date
+}
+
+async function getLifetime(stored: number): Promise<Lifetime> {
+  const db = await mongoDb()
+  const [doc, oldest] = await Promise.all([
+    db
+      .collection<LifetimeDoc>('pipeline_stats')
+      .findOne({ _id: 'lifetime' })
+      .catch(() => null),
+    db
+      .collection<Job>(COLLECTION)
+      .find({}, { projection: { fetchedAt: 1 } })
+      .sort({ fetchedAt: 1 })
+      .limit(1)
+      .toArray(),
+  ])
+  return {
+    collected: Math.max(Number(doc?.jobsCollected) || 0, stored),
+    since: doc?.firstSeenAt ?? oldest[0]?.fetchedAt ?? null,
+    runs: typeof doc?.runs === 'number' ? doc.runs : null,
+    recorded: Boolean(doc),
+  }
 }
 
 /**
@@ -318,6 +370,7 @@ export async function getPulse(): Promise<Pulse> {
     // A source that should always report and didn't is the single most useful
     // thing on this page: it is how a board quietly dying gets noticed.
     missingSources: sources.filter((s) => s.expected && !s.reported),
+    lifetime: await getLifetime(total),
   }
 }
 
