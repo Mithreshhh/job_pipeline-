@@ -171,6 +171,15 @@ window, so widening the window never finds the jobs already thrown away.
 Without it the collection grows by ~2,700 rows a day, about a million a year
 against a 512MB free tier.
 
+Because of the purge, counting the collection does not say how many jobs the
+pipeline has ever collected. `db/pipelineStats.js` keeps that number: after
+the purge, each run adds the rows it inserted that are still stored to a
+running total in the `pipeline_stats` collection (`_id: "lifetime"`), along
+with the run count and when collecting began. It needs no seeding, since the
+first write starts from the stored count, and it never drops below it. Menler
+LMS shows it over its job board as "jobs collected". A failure there is
+logged and the run carries on.
+
 ## Reading the jobs
 
 Both LMSes connect to this collection directly with a **read-only** Atlas
