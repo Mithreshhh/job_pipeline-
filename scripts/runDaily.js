@@ -23,6 +23,7 @@ const { dedupeJobs } = require("../pipeline/dedupe.js");
 const { upsertJobs } = require("../db/upsertJobs.js");
 const { deactivateStaleJobs } = require("../db/deactivateStale.js");
 const { purgeOldJobs } = require("../db/purgeOldJobs.js");
+const { recordRun } = require("../db/pipelineStats.js");
 const { disconnectFromMongo } = require("../db/connection.js");
 
 const SCRAPERS_DIR = path.join(__dirname, "..", "scrapers");
@@ -252,6 +253,16 @@ async function runDaily() {
     console.log("[purge] skipped");
   }
 
+  // The lifetime total the boards show as "jobs collected". After the purge,
+  // so a row inserted and deleted in the same run is not counted. Recorded on
+  // an empty run too: it is still a run.
+  const lifetime = await recordRun({ runAt });
+  if (lifetime) {
+    console.log(
+      `[stats] ${lifetime.jobsCollected} collected since ${lifetime.firstSeenAt.toISOString().slice(0, 10)} (${lifetime.lastRunNew} new this run)`
+    );
+  }
+
   console.log("\n=== Summary ===");
   console.log(`Duration:            ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
   console.log(`Total jobs fetched:  ${totalFetched}`);
@@ -266,6 +277,7 @@ async function runDaily() {
     : "not checked";
   console.log(`Retired (taken down): ${takenDown}`);
   console.log(`Deleted (long past):  ${purgeSummary.deleted}`);
+  console.log(`Collected, all time: ${lifetime ? lifetime.jobsCollected : "not recorded"}`);
 
   console.log("\nPer source:");
   for (const item of contributions) {
@@ -287,6 +299,7 @@ async function runDaily() {
     upsertSummary,
     staleSummary,
     purgeSummary,
+    lifetime,
   };
 }
 
