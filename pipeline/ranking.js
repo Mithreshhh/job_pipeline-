@@ -350,7 +350,7 @@ function scoreIndiaFit({ country, location = "", isRemote = false, title = "", d
  * Sources whose URL is the employer's own application form. One click, one
  * form, no aggregator in between and no account to create.
  */
-const DIRECT_APPLY_SOURCES = new Set(["greenhouse", "lever", "ashby", "weworkremotely", "remoteok"]);
+const DIRECT_APPLY_SOURCES = new Set(["greenhouse", "lever", "ashby", "smartrecruiters", "weworkremotely", "remoteok"]);
 
 /** Sources that put a wall, a login or a redirect between the student and the form. */
 const AGGREGATOR_SOURCES = new Set(["linkedin", "indeed", "ambitionbox", "instahyre", "jobicy", "arbeitnow"]);

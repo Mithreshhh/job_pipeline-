@@ -1008,6 +1008,35 @@ const MAPPERS = {
     };
   },
 
+  /**
+   * SmartRecruiters (scrapers/smartrecruiters.js). The postings list carries
+   * no description, so matching is title-only like Greenhouse - plus the
+   * employer's own job function, which is a reliable one-word category. The
+   * company comes from the entry, since the API's own name is often in
+   * capitals.
+   */
+  smartrecruiters(raw) {
+    const where = raw.location || {};
+    const location =
+      where.fullLocation || [where.city, where.region, where.country].filter(Boolean).join(", ") || null;
+    const company = raw.company || {};
+    const id = raw.id ? String(raw.id) : "";
+
+    return {
+      title: raw.name || null,
+      company: null,
+      location,
+      defaultCountry: where.country === "in" ? "India" : undefined,
+      isRemote: Boolean(where.remote) || /\bremote\b/i.test(toText(location, raw.name)),
+      url: id && company.identifier ? `https://jobs.smartrecruiters.com/${company.identifier}/${id}` : null,
+      postedAt: toIsoDate(raw.releasedDate),
+      matchText: toText(raw.name, raw.function && raw.function.label),
+      typeText: toText(raw.typeOfEmployment && raw.typeOfEmployment.label),
+      levelTitle: toText(raw.name, raw.experienceLevel && raw.experienceLevel.label),
+      levelText: "",
+    };
+  },
+
   ashby(raw) {
     const location = raw.location || null;
 
@@ -1042,6 +1071,7 @@ const SOURCE_ALIASES = {
   ambitionbox: "ambitionbox",
   instahyre: "instahyre",
   weworkremotely: "weworkremotely",
+  smartrecruiters: "smartrecruiters",
 };
 
 // Matched against the wrapper's own source string, not the mapper alias:

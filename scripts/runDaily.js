@@ -18,6 +18,7 @@ const { fetchAiCompanyBoards } = require("../scrapers/aiCompanies.js");
 const { fetchWeWorkRemotely } = require("../scrapers/weworkremotely.js");
 const { fetchAmbitionBox } = require("../scrapers/ambitionbox.js");
 const { fetchInstahyre } = require("../scrapers/instahyre.js");
+const { fetchSmartRecruiters } = require("../scrapers/smartrecruiters.js");
 const { normalizeRaw } = require("../pipeline/normalize.js");
 const { dedupeJobs } = require("../pipeline/dedupe.js");
 const { upsertJobs } = require("../db/upsertJobs.js");
@@ -150,6 +151,11 @@ const SOURCES = [
   {
     name: "ai company boards (greenhouse + lever + ashby)",
     run: () => fetchAiCompanyBoards(),
+  },
+  {
+    // Bosch, Swiggy, ServiceNow and others: Indian roles only, direct apply.
+    name: "smartrecruiters (India)",
+    run: () => fetchSmartRecruiters(),
   },
 ];
 

@@ -143,6 +143,7 @@ const SOURCES = [
   { value: "greenhouse", label: "Company board" },
   { value: "lever", label: "Company board" },
   { value: "ashby", label: "Company board" },
+  { value: "smartrecruiters", label: "Company board" },
   { value: "manual", label: "Posted by the team" },
 ];
 
