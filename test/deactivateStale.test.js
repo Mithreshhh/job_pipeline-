@@ -17,7 +17,7 @@ const {
   COMPLETE_FEED_SOURCES,
   DEFAULT_GRACE_DAYS,
 } = require("../db/deactivateStale.js");
-const { buildPurgeFilter, DEFAULT_PURGE_DAYS } = require("../db/purgeOldJobs.js");
+const { buildPurgeFilter, DEFAULT_PURGE_DAYS, WIDEST_BOARD_DAYS } = require("../db/purgeOldJobs.js");
 const { FRESH_DAYS } = require("../db/readJobs.js");
 
 const RUN_AT = new Date("2026-09-20T00:30:00.000Z");
@@ -93,10 +93,11 @@ test("We Work Remotely is deliberately not a complete feed", () => {
   assert.deepEqual([...COMPLETE_FEED_SOURCES].sort(), ["ashby", "greenhouse", "lever"]);
 });
 
-test("purge keeps well clear of the board's window", () => {
-  // The margin is what lets you widen the window without having thrown the
-  // jobs away, and what you read when asking why a listing never appeared.
-  assert.ok(DEFAULT_PURGE_DAYS > FRESH_DAYS * 3);
+test("purge keeps clear of every board's window", () => {
+  // Skeo's 15 days is the widest; the margin past it is what you read when
+  // asking why a listing never appeared.
+  assert.ok(WIDEST_BOARD_DAYS >= FRESH_DAYS);
+  assert.ok(DEFAULT_PURGE_DAYS >= WIDEST_BOARD_DAYS + 5);
 });
 
 test("purge judges a row on the same date the board judged it by", () => {

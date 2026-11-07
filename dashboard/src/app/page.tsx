@@ -215,7 +215,7 @@ export default async function Page({
             <Tile
               label="Stored now"
               value={nf(pulse.total)}
-              note="older than 60 days is deleted"
+              note="older than 21 days is deleted"
             />
             <Tile
               label="Runs"
