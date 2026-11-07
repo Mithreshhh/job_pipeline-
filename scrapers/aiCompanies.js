@@ -31,7 +31,7 @@
  * because India was 7.7% of everything stored - only JobSpy was looking for
  * it, and Naukri, which used to be the other half, is behind a bot wall.
  */
-const INDIA_GREENHOUSE_BOARDS = ["groww", "hackerrank"];
+const INDIA_GREENHOUSE_BOARDS = ["groww", "hackerrank", "inmobi", "highradius"];
 
 const INDIA_LEVER_BOARDS = [
   "meesho",
@@ -43,7 +43,7 @@ const INDIA_LEVER_BOARDS = [
   "epifi",
 ];
 
-const INDIA_ASHBY_BOARDS = ["atlan"];
+const INDIA_ASHBY_BOARDS = ["atlan", "tekion"];
 
 const GREENHOUSE_BOARDS = [
   // AI-data companies: the source of non-technical AI roles.
@@ -66,6 +66,13 @@ const GREENHOUSE_BOARDS = [
   "elastic",
   "datadog",
   "twilio",
+  // Global companies with a large Indian office: a fifth or more of each
+  // board was in Bengaluru, Gurugram or Pune when added (7 Nov 2026).
+  "okta",
+  "zscaler",
+  "mongodb",
+  "rubrik",
+  "druva",
   ...INDIA_GREENHOUSE_BOARDS,
 ];
 
