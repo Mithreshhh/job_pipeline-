@@ -13,6 +13,9 @@ const { spawnSync } = require("child_process");
 
 const { normalizeRaw } = require("../pipeline/normalize.js");
 const { SOURCE_VALUES } = require("../pipeline/taxonomy.js");
+const { boardFilter, needsReserve, BOARD_TARGET } = require("../db/boardSize.js");
+const { WIDEST_BOARD_DAYS } = require("../db/purgeOldJobs.js");
+const { SOURCES } = require("../scripts/runDaily.js");
 
 const SCRAPERS = path.join(__dirname, "..", "scrapers");
 
@@ -51,6 +54,29 @@ test("Indian Indeed rows are labelled so normalize reads them as Indian", { skip
   assert.strictEqual(jobs[0].country, "International");
   const { jobs: indian } = normalizeRaw([{ source: plan.india, jobs: [{ ...row, location: "Pune, MH" }] }]);
   assert.strictEqual(indian[0].country, "India");
+});
+
+test("exactly one source is the reserve, and it is the Indeed sweep abroad", () => {
+  const reserve = SOURCES.filter((source) => source.reserve);
+  assert.strictEqual(reserve.length, 1);
+  assert.match(reserve[0].name, /USA/);
+});
+
+test("the reserve runs below the target, and when the board cannot be counted", () => {
+  assert.strictEqual(needsReserve(BOARD_TARGET - 1), true);
+  assert.strictEqual(needsReserve(BOARD_TARGET), false);
+  assert.strictEqual(needsReserve(null), true);
+  assert.strictEqual(needsReserve(NaN), true);
+  assert.ok(BOARD_TARGET >= 100000, "the floor Skeo promises");
+});
+
+test("the board is counted the way Skeo shows it: live, inside its window", () => {
+  const now = Date.parse("2026-11-07T00:30:00Z");
+  const filter = boardFilter({ now });
+  assert.strictEqual(filter.isActive, true);
+  const since = filter.$or[0].postedAt.$gte;
+  assert.strictEqual(now - since.getTime(), WIDEST_BOARD_DAYS * 24 * 60 * 60 * 1000);
+  assert.deepEqual(filter.$or[1], { postedAt: null, fetchedAt: { $gte: since } });
 });
 
 // A real record from the public postings API, trimmed.

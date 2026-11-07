@@ -20,13 +20,13 @@ const { fetchAmbitionBox } = require("../scrapers/ambitionbox.js");
 const { fetchInstahyre } = require("../scrapers/instahyre.js");
 const { runIndeedWide } = require("../scrapers/indeedWide.js");
 const { fetchSmartRecruiters } = require("../scrapers/smartrecruiters.js");
-const { fetchSmartRecruiters } = require("../scrapers/smartrecruiters.js");
 const { normalizeRaw } = require("../pipeline/normalize.js");
 const { dedupeJobs } = require("../pipeline/dedupe.js");
 const { upsertJobs } = require("../db/upsertJobs.js");
 const { deactivateStaleJobs } = require("../db/deactivateStale.js");
 const { purgeOldJobs } = require("../db/purgeOldJobs.js");
 const { recordRun } = require("../db/pipelineStats.js");
+const { countBoard, needsReserve, BOARD_TARGET } = require("../db/boardSize.js");
 const { disconnectFromMongo } = require("../db/connection.js");
 
 const SCRAPERS_DIR = path.join(__dirname, "..", "scrapers");
@@ -113,6 +113,14 @@ const SOURCES = [
     run: async () => runIndeedWide("core"),
   },
   {
+    // Indeed Canada, Australia and the USA, run only on a morning Skeo's
+    // board is under BOARD_TARGET (db/boardSize.js). Every day, they would
+    // push the board past 2 lakh and the database past its size.
+    name: "indeed wide reserve (Canada, Australia, USA; last 30h)",
+    reserve: true,
+    run: async () => runIndeedWide("reserve"),
+  },
+  {
     name: "jobspy indeed+linkedin (international)",
     run: async () => international.runJobSpyGlobal(),
   },
@@ -165,11 +173,6 @@ const SOURCES = [
     name: "smartrecruiters (India)",
     run: () => fetchSmartRecruiters(),
   },
-  {
-    // Bosch, Swiggy, ServiceNow and others: Indian roles only, direct apply.
-    name: "smartrecruiters (India)",
-    run: () => fetchSmartRecruiters(),
-  },
 ];
 
 function countJobs(entries) {
@@ -184,12 +187,12 @@ function countPartialErrors(entries) {
   return entries.filter((entry) => entry.error).length;
 }
 
-async function fetchAllSources() {
+async function fetchAllSources(sources = SOURCES) {
   const entries = [];
   const failed = [];
   const contributions = [];
 
-  for (const source of SOURCES) {
+  for (const source of sources) {
     console.log(`\n[fetch] ${source.name}...`);
     try {
       const sourceEntries = (await source.run()) || [];
@@ -220,7 +223,22 @@ async function runDaily() {
   const runAt = new Date();
   console.log(`Daily job pipeline started ${runAt.toISOString()}`);
 
-  const { entries, failed, contributions } = await fetchAllSources();
+  // Below the target, the reserve tier runs too. A count that fails runs it:
+  // a missed top-up costs the board a day, an extra one a few minutes.
+  let boardCount = null;
+  try {
+    boardCount = await countBoard();
+  } catch (err) {
+    console.error(`[board] could not count the board: ${err.message}`);
+  }
+  const withReserve = needsReserve(boardCount);
+  console.log(
+    `[board] ${boardCount === null ? "unknown" : boardCount} jobs on Skeo's board, target ${BOARD_TARGET}: ` +
+      (withReserve ? "running the reserve tier" : "reserve tier not needed")
+  );
+  const sources = SOURCES.filter((source) => !source.reserve || withReserve);
+
+  const { entries, failed, contributions } = await fetchAllSources(sources);
   const totalFetched = countJobs(entries);
 
   const { jobs, excluded } = normalizeRaw(entries);
@@ -314,6 +332,7 @@ async function runDaily() {
   return {
     totalFetched,
     deduped: deduped.length,
+    attempted: sources.length,
     failed,
     upsertSummary,
     staleSummary,
@@ -328,7 +347,7 @@ if (require.main === module) {
       await disconnectFromMongo();
       // Every source failing means we stored nothing - that's a red run,
       // not a quiet success.
-      if (result.failed.length === SOURCES.length) {
+      if (result.failed.length === result.attempted) {
         console.error("\nAll sources failed - exiting with failure.");
         process.exit(1);
       }
