@@ -1,14 +1,57 @@
 /**
- * SmartRecruiters, the Indian company boards. No network.
+ * The sources added to reach a 1 lakh board: the wide Indeed sweep, its
+ * reserve tier, and SmartRecruiters. No network; the Indeed plan is read from
+ * the Python module itself so the counts here cannot drift from it.
  */
 
 "use strict";
 
 const test = require("node:test");
 const assert = require("node:assert");
+const path = require("path");
+const { spawnSync } = require("child_process");
 
 const { normalizeRaw } = require("../pipeline/normalize.js");
 const { SOURCE_VALUES } = require("../pipeline/taxonomy.js");
+
+const SCRAPERS = path.join(__dirname, "..", "scrapers");
+
+function indeedPlan() {
+  const code = [
+    "import sys, json",
+    `sys.path.insert(0, ${JSON.stringify(SCRAPERS)})`,
+    "import indeed_wide as w",
+    "core = w.search_plan('core'); reserve = w.search_plan('reserve')",
+    "print(json.dumps({'core': core, 'reserve': reserve, 'india': w.entry_source('India'), 'uk': w.entry_source('UK')}))",
+  ].join("\n");
+  const result = spawnSync("python", ["-c", code], { encoding: "utf-8" });
+  return result.status === 0 ? JSON.parse(result.stdout) : null;
+}
+
+const plan = indeedPlan();
+
+test("the Indeed sweep searches India by name and keeps the USA in reserve", { skip: !plan && "no python" }, () => {
+  const markets = (pairs) => [...new Set(pairs.map(([, market]) => market))];
+  assert.ok(markets(plan.core).includes("India"));
+  assert.ok(!markets(plan.core).includes("USA"));
+  assert.deepEqual(markets(plan.reserve), ["Canada", "Australia", "USA"]);
+  // The call budget: a change to the lists shows up here as a number.
+  assert.strictEqual(plan.core.length, 118);
+  assert.strictEqual(plan.reserve.length, 60);
+  const pairs = plan.core.map(([term, market]) => `${term}|${market}`);
+  assert.strictEqual(new Set(pairs).size, pairs.length, "no search asked twice");
+});
+
+test("Indian Indeed rows are labelled so normalize reads them as Indian", { skip: !plan && "no python" }, () => {
+  assert.strictEqual(plan.india, "jobspy");
+  assert.strictEqual(plan.uk, "jobspy-indeed");
+
+  const row = { site: "indeed", title: "Sales Executive", company: "Acme", location: "Leeds", job_url: "https://uk.indeed.com/viewjob?jk=1", date_posted: "2026-11-06" };
+  const { jobs } = normalizeRaw([{ source: plan.uk, jobs: [row] }]);
+  assert.strictEqual(jobs[0].country, "International");
+  const { jobs: indian } = normalizeRaw([{ source: plan.india, jobs: [{ ...row, location: "Pune, MH" }] }]);
+  assert.strictEqual(indian[0].country, "India");
+});
 
 // A real record from the public postings API, trimmed.
 const SWIGGY = {
