@@ -29,7 +29,7 @@ easeOfApply, rankScore, rankReasons, experienceLevel, postedAt, fetchedAt`
 `companyLogo` comes free from the five sources that ship one: JobSpy
 (~60% of rows), Himalayas, Jobicy, Instahyre, and AmbitionBox (which gives a
 slug, so the URL is built from its own pattern). Greenhouse, Lever, Ashby,
-Arbeitnow and WeWorkRemotely ship nothing, and RemoteOK has the field but
+SmartRecruiters, Arbeitnow and WeWorkRemotely ship nothing, and RemoteOK has the field but
 leaves it empty, so **null is the normal case** and both boards draw a
 monogram instead. Only `http(s)` URLs are kept, since the value ends up in an
 `<img src>`.
@@ -163,13 +163,39 @@ this project's worst bug, which hid 3,261 of 7,929 live listings.
 Run `node scripts/resweep.js` after changing the grace window. It is not needed
 after changing `FRESH_DAYS`.
 
+## Volume: keeping Skeo's board over 1 lakh
+
+Skeo shows a 15-day window and is meant to hold at least 1 lakh jobs. The
+original sources brought ~4,000 new jobs a day, which held ~64,000. Two
+sources close the gap:
+
+- **`scrapers/indeed_wide.py`** asks Indeed for everything posted in the last
+  30 hours, up to its ceiling of ~1,000 per search: 58 searches for India and
+  20 broad ones each for the UAE, Singapore and the UK. The first full run
+  gave ~4,300 unique Indian jobs and ~3,700 from abroad in about four
+  minutes. Searching India city by city added only 21 more, so that is
+  Indeed India's whole daily supply.
+- **`scrapers/smartrecruiters.js`** reads the Indian postings of large
+  employers on SmartRecruiters (Bosch, Swiggy, ServiceNow, Experian and
+  others): real employers with a direct apply link.
+
+Canada, Australia and the USA are a **reserve tier** of the same sweep.
+Every day they would push the board past 2 lakh, so the run first counts
+Skeo's board (`db/boardSize.js`) and adds them only when it is under
+`BOARD_TARGET` (1.2 lakh), or when the count fails.
+
+Not widened, on purpose: Naukri, LinkedIn's guest pages, Lever's hosted
+boards and Internshala all disallow Anthropic's crawlers in their
+robots.txt. Indeed allows its search pages to every agent.
+
 ## Storage
 
 `db/purgeOldJobs.js` runs at the end of each daily run and is the only thing
-here that deletes. It removes rows older than **60 days** — six times the board
-window, so widening the window never finds the jobs already thrown away.
-Without it the collection grows by ~2,700 rows a day, about a million a year
-against a 512MB free tier.
+here that deletes. It removes rows older than **21 days**: Skeo's 15-day
+window, the widest of the boards, plus six days of margin. It was 60 days
+when ~2,700 rows arrived a day; at ~10,000 a day, 60 days would be several
+times what the 512MB free tier holds, and 21 keeps the collection near the
+~200,000 rows it already held.
 
 Because of the purge, counting the collection does not say how many jobs the
 pipeline has ever collected. `db/pipelineStats.js` keeps that number: after
