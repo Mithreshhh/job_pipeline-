@@ -10,8 +10,9 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    # The full run makes ~150 network calls across seven sources.
-    timeout-minutes: 90
+    # ~150 calls across the original sources, plus 118-178 Indeed searches
+    # (scrapers/indeed_wide.py, a few minutes at three at a time).
+    timeout-minutes: 150
 
     steps:
       - name: Check out the repository
